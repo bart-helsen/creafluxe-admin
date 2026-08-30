@@ -7,12 +7,12 @@ import SignOutButton from "@/components/SignOutButton";
 // screens that arrive in later phases (see the blueprint roadmap, doc 07).
 const NAV = [
   { href: "/", label: "Dashboard", phase: null },
-  { href: "/orders", label: "Orders", phase: "Phase 1" },
-  { href: "/invoices", label: "Invoices", phase: "Phase 1" },
-  { href: "/products", label: "Catalogue", phase: "Phase 2" },
-  { href: "/designs", label: "Design library", phase: "Phase 2" },
-  { href: "/materials", label: "Materials", phase: "Phase 2b" },
-  { href: "/suppliers", label: "Suppliers", phase: "Phase 2b" },
+  { href: "/orders", label: "Bestellingen", phase: null },
+  { href: "/invoices", label: "Facturen", phase: null },
+  { href: "/products", label: "Catalogus", phase: "Fase 2" },
+  { href: "/designs", label: "Ontwerpen", phase: "Fase 2" },
+  { href: "/materials", label: "Materialen", phase: "Fase 2b" },
+  { href: "/suppliers", label: "Leveranciers", phase: "Fase 2b" },
 ];
 
 export default async function DashboardLayout({

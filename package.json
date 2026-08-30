@@ -12,27 +12,36 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
-    "create-admin": "tsx scripts/create-admin.ts"
+    "create-admin": "tsx scripts/create-admin.ts",
+    "import-products": "tsx scripts/import-products.ts",
+    "seed-demo": "tsx scripts/seed-demo.ts",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1121.0",
+    "@aws-sdk/s3-request-presigner": "^3.1121.0",
     "@prisma/client": "^6.3.0",
     "bcryptjs": "^2.4.3",
     "next": "^16.3.3",
     "next-auth": "^5.0.0-beta.32",
+    "pdfkit": "^0.15.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "resend": "^4.8.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.17.0",
+    "@types/pdfkit": "^0.13.9",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "eslint": "^9.18.0",
     "eslint-config-next": "^15.1.6",
     "prisma": "^6.3.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.9"
   }
 }

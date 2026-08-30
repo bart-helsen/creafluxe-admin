@@ -172,6 +172,9 @@ model Order {
   type        OrderType   @default(WEBSHOP)
   status      OrderStatus @default(NEW)
   channel     String      @default("website") // where it came from
+  // Optional client-supplied idempotency key: a retried intake POST with the
+  // same clientRef returns the first order instead of creating a duplicate.
+  clientRef   String?     @unique
 
   customerId String
   customer   Customer @relation(fields: [customerId], references: [id])

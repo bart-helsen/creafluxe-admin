@@ -26,6 +26,17 @@ export const authConfig = {
       // Auth.js internal routes must always be reachable.
       if (pathname.startsWith("/api/auth")) return true;
 
+      // Public machine endpoints authenticate with a shared X-Api-Key inside the
+      // route handler (docs/04 §A), NOT with a dashboard session — so the login
+      // gate must let them through. Includes future webhooks (Mollie/Peppol).
+      if (
+        pathname === "/api/orders/intake" ||
+        pathname === "/api/uploads/presign" ||
+        pathname.startsWith("/api/webhooks/")
+      ) {
+        return true;
+      }
+
       // The login page is public. If already logged in, bounce to the dashboard.
       if (pathname === "/login") {
         if (isLoggedIn) return Response.redirect(new URL("/", nextUrl));
