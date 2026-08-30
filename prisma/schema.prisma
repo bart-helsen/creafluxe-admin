@@ -1,0 +1,575 @@
+// Creafluxe Administration — Database schema (PostgreSQL via Prisma)
+// ---------------------------------------------------------------------------
+// This is the single source of truth for the data model. It is fully specified
+// and validated (`npx prisma validate` / `prisma format`). See docs/03 for a
+// plain-language explanation of every model and the reasoning behind it.
+//
+// Conventions:
+// - Money is stored as Decimal(10,2) in EUR. Never use Float for money.
+// - All timestamps are UTC (DateTime). Display in Europe/Brussels in the UI.
+// - IDs are cuid() strings: unguessable, safe to expose in URLs.
+// - Human-facing numbers (orderNumber, invoiceNumber) are separate, sequential.
+// - "Snapshot" fields copy values at order time so later catalogue edits never
+//   change historical orders/invoices (legally important for invoices).
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===========================================================================
+// AUTH — just you for now, but modelled properly so it can grow.
+// ===========================================================================
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  role         UserRole @default(ADMIN)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  statusChanges  OrderStatusEvent[]
+  stockMovements StockMovement[]
+}
+
+enum UserRole {
+  ADMIN
+  STAFF
+}
+
+// ===========================================================================
+// CUSTOMERS
+// ===========================================================================
+
+model Customer {
+  id         String   @id @default(cuid())
+  name       String
+  email      String
+  phone      String?
+  // B2B customers have a VAT number and trigger Peppol e-invoicing later.
+  isBusiness Boolean  @default(false)
+  vatNumber  String? // e.g. BE0123456789
+  companyName String?
+
+  // Default billing/contact address (per-order delivery address lives on Order).
+  addressStreet  String?
+  addressPostal  String?
+  addressCity    String?
+  addressCountry String? @default("België")
+
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders   Order[]
+  invoices Invoice[]
+
+  @@index([email])
+}
+
+// ===========================================================================
+// PRODUCT CATALOGUE  (migrated from products.xlsx)
+// ===========================================================================
+
+model Product {
+  id          String  @id @default(cuid())
+  sku         String  @unique // short stable code you assign, e.g. HEUP-LEER
+  name        String // "Heup flacon (leer)"
+  description String?
+  basePrice   Decimal @db.Decimal(10, 2)
+  vatRate     Decimal @default(21.00) @db.Decimal(5, 2) // Belgian standard 21%
+  active      Boolean @default(true)
+  filter      String? // the "Filter" column — category/tag used by the webshop
+  imagePath   String? // reference to product image(s)
+  sortOrder   Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  options      ProductOption[]
+  designs      DesignAsset[]
+  orderItems   OrderItem[]
+  bomLines     ProductMaterial[] // bill of materials: what this product consumes
+
+  @@index([active])
+}
+
+// Available choices per product: materials, sizes, styles, and named designs.
+// Each option can carry a price delta (e.g. metal +€2). Modelled as rows rather
+// than JSON so you can query/price them and attach a design file per design.
+model ProductOption {
+  id         String            @id @default(cuid())
+  productId  String
+  product    Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  type       ProductOptionType
+  value      String // "Leer", "Hert", "20cm", ...
+  priceDelta Decimal           @default(0.00) @db.Decimal(10, 2)
+  active     Boolean           @default(true)
+  sortOrder  Int               @default(0)
+
+  @@unique([productId, type, value])
+  @@index([productId])
+}
+
+enum ProductOptionType {
+  MATERIAL
+  SIZE
+  STYLE
+  DESIGN
+}
+
+// ===========================================================================
+// DESIGN ASSETS  — the files you open to actually make the product.
+//   - Master files: reusable per product/option (is_master = true).
+//   - Custom files: uploaded by a customer for one order item.
+// Files live in Cloudflare R2; only the key/metadata are stored here.
+// ===========================================================================
+
+model DesignAsset {
+  id        String          @id @default(cuid())
+  kind      DesignAssetKind
+  label     String? // human label, e.g. "Hert gravure - vector"
+  // R2 storage reference. The app builds presigned URLs on demand.
+  storageKey String        @unique
+  fileName   String
+  mimeType   String
+  sizeBytes  Int?
+
+  // For master/library files: which product (and optionally which design value).
+  productId    String?
+  product      Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  designValue  String? // matches a ProductOption(type=DESIGN).value when relevant
+
+  // For custom uploads: which order item it belongs to.
+  orderItemId String?
+  orderItem   OrderItem? @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([productId])
+  @@index([orderItemId])
+}
+
+enum DesignAssetKind {
+  MASTER // reusable product/library design file you maintain
+  CUSTOM // customer-supplied file for a specific order
+}
+
+// ===========================================================================
+// ORDERS
+// ===========================================================================
+
+model Order {
+  id          String      @id @default(cuid())
+  orderNumber Int         @unique // human-friendly sequential number (see Counter)
+  type        OrderType   @default(WEBSHOP)
+  status      OrderStatus @default(NEW)
+  channel     String      @default("website") // where it came from
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  // Free-text remarks the customer left for the whole order.
+  customerRemarks String?
+
+  // Delivery (optional). If false, it's pickup.
+  deliveryRequested Boolean @default(false)
+  deliveryStreet    String?
+  deliveryPostal    String?
+  deliveryCity      String?
+  deliveryCountry   String?
+  deliveryNotes     String?
+
+  // Money totals (snapshotted at intake). Invoice recomputes authoritatively.
+  subtotal Decimal @default(0.00) @db.Decimal(10, 2)
+  total    Decimal @default(0.00) @db.Decimal(10, 2)
+
+  // For custom-design requests there may be no catalogue items, just a brief.
+  designBrief String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items        OrderItem[]
+  invoice      Invoice?
+  statusEvents OrderStatusEvent[]
+  notifications NotificationLog[]
+  stockMovements StockMovement[] // material consumed producing this order
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum OrderType {
+  WEBSHOP // came from the webshop cart
+  CUSTOM  // came from the atelier / custom-design request
+}
+
+// The lifecycle. "Open" in your mental model = CONFIRMED..READY.
+enum OrderStatus {
+  NEW          // just arrived, not yet reviewed
+  QUOTE_SENT   // you sent a quote/invoice, awaiting confirmation or payment
+  CONFIRMED    // customer confirmed / paid — to be produced
+  IN_PRODUCTION
+  READY        // made, awaiting pickup/shipping
+  DELIVERED    // handed over / shipped
+  COMPLETED    // done and paid — archived
+  CANCELLED
+}
+
+model OrderItem {
+  id      String @id @default(cuid())
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  // Optional link to catalogue; null for a fully custom line.
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  // Snapshots (so later catalogue edits don't rewrite history).
+  nameSnapshot String
+  unitPrice    Decimal @db.Decimal(10, 2)
+  quantity     Int
+  lineTotal    Decimal @db.Decimal(10, 2)
+  vatRate      Decimal @default(21.00) @db.Decimal(5, 2)
+
+  // Selected options (snapshotted as text — what the customer actually chose).
+  material String?
+  size     String?
+  style    String?
+  design   String?
+  remarks  String?
+
+  // Custom design files the customer uploaded for THIS line.
+  customDesigns DesignAsset[]
+
+  createdAt DateTime @default(now())
+
+  @@index([orderId])
+}
+
+// Full audit trail of status changes — powers the tracking view and history.
+model OrderStatusEvent {
+  id         String       @id @default(cuid())
+  orderId    String
+  order      Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus OrderStatus?
+  toStatus   OrderStatus
+  note       String?
+  changedById String?
+  changedBy   User?       @relation(fields: [changedById], references: [id], onDelete: SetNull)
+  createdAt  DateTime     @default(now())
+
+  @@index([orderId])
+}
+
+// ===========================================================================
+// INVOICES
+// ===========================================================================
+
+model Invoice {
+  id            String        @id @default(cuid())
+  // Belgian law: sequential, gapless numbering. Assigned only when ISSUED,
+  // formatted like "2026-0001" (see Counter + docs/06).
+  invoiceNumber String?       @unique
+  status        InvoiceStatus @default(DRAFT)
+
+  orderId String @unique
+  order   Order  @relation(fields: [orderId], references: [id])
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  issueDate DateTime?
+  dueDate   DateTime?
+
+  // Authoritative money fields (recomputed from lines at generation).
+  subtotal  Decimal @db.Decimal(10, 2)
+  vatAmount Decimal @db.Decimal(10, 2)
+  total     Decimal @db.Decimal(10, 2)
+  currency  String  @default("EUR")
+
+  // Where the generated PDF lives (R2 key) and any external references.
+  pdfStorageKey String?
+  dexxterRef    String? // note the matching Dexxter invoice id once you create it
+  peppolStatus  PeppolStatus @default(NOT_SENT)
+  peppolMessageId String?
+
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines    InvoiceLine[]
+  payments Payment[]
+
+  @@index([status])
+}
+
+enum InvoiceStatus {
+  DRAFT     // auto-generated, awaiting your review
+  ISSUED    // finalised, number assigned
+  SENT      // delivered to customer
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum PeppolStatus {
+  NOT_SENT
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+}
+
+// Invoice lines are snapshots — never a live link to products.
+model InvoiceLine {
+  id         String  @id @default(cuid())
+  invoiceId  String
+  invoice    Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description String
+  quantity   Int
+  unitPrice  Decimal @db.Decimal(10, 2)
+  vatRate    Decimal @db.Decimal(5, 2)
+  lineTotal  Decimal @db.Decimal(10, 2)
+  sortOrder  Int     @default(0)
+
+  @@index([invoiceId])
+}
+
+// ===========================================================================
+// PAYMENTS  (Phase 3 — Mollie). Modelled now so nothing needs reshaping later.
+// ===========================================================================
+
+model Payment {
+  id                String        @id @default(cuid())
+  invoiceId         String
+  invoice           Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  provider          String        @default("mollie")
+  providerPaymentId String?       @unique
+  amount            Decimal       @db.Decimal(10, 2)
+  method            String? // bancontact, creditcard, ...
+  status            PaymentStatus @default(OPEN)
+  paymentUrl        String? // link sent to the customer
+  paidAt            DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([invoiceId])
+}
+
+enum PaymentStatus {
+  OPEN
+  PENDING
+  PAID
+  FAILED
+  EXPIRED
+  CANCELLED
+  REFUNDED
+}
+
+// ===========================================================================
+// INVENTORY — materials, suppliers, stock levels & bill of materials.
+//   Material  = a thing you keep in stock (wood/plastic plate, gadget, ...).
+//   Supplier  = who you buy from.
+//   SupplierMaterial = price of one material from one supplier (many per material).
+//   StockMovement    = every in/out/adjustment; current stock is the running sum.
+//   ProductMaterial  = bill of materials: what a product consumes (for costing).
+// ===========================================================================
+
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  website   String?
+  customerNumber String? // your account number with this supplier
+  addressStreet  String?
+  addressPostal  String?
+  addressCity    String?
+  addressCountry String? @default("België")
+  notes     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supplierMaterials  SupplierMaterial[]
+  currentForMaterials Material[]       @relation("CurrentSupplier")
+  stockMovements     StockMovement[]
+
+  @@index([active])
+}
+
+model Material {
+  id          String           @id @default(cuid())
+  sku         String           @unique // your internal code, e.g. WOOD-BERK-3MM
+  name        String // "Berken multiplex 3mm 600x400"
+  category    MaterialCategory @default(OTHER)
+  description String?
+
+  // Unit of stock/costing: free text so any unit works ("plaat", "stuk", "m2", "kg", "m").
+  unit String @default("stuk")
+
+  // Stock tracking. stockQuantity is the cached running total of StockMovements.
+  stockQuantity   Decimal @default(0) @db.Decimal(12, 3)
+  reorderLevel    Decimal @default(0) @db.Decimal(12, 3) // notify at/below this
+  reorderQuantity Decimal? @db.Decimal(12, 3)            // suggested amount to reorder
+
+  // Current unit cost used for product/price calculations (excl. VAT).
+  // Typically synced from the preferred supplier's price or the last purchase.
+  unitCost Decimal @default(0.00) @db.Decimal(10, 4)
+
+  // The supplier you currently buy this from (the "current supplier for each material").
+  currentSupplierId String?
+  currentSupplier   Supplier? @relation("CurrentSupplier", fields: [currentSupplierId], references: [id], onDelete: SetNull)
+
+  storageLocation String? // where it physically is
+  active    Boolean  @default(true)
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  supplierMaterials SupplierMaterial[]
+  stockMovements    StockMovement[]
+  bomLines          ProductMaterial[]
+
+  @@index([category])
+  @@index([active])
+}
+
+enum MaterialCategory {
+  WOOD
+  PLASTIC
+  METAL
+  PAPER
+  GADGET   // small items you personalise
+  CONSUMABLE // glue, finishing, packaging, ...
+  OTHER
+}
+
+// Price of one material from one supplier. A material can have several of these;
+// exactly one may be flagged isPreferred (mirrors Material.currentSupplier).
+model SupplierMaterial {
+  id         String @id @default(cuid())
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  materialId String
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  supplierSku String? // the supplier's article code
+  unitPrice   Decimal @db.Decimal(10, 4) // price per Material.unit (excl. VAT)
+  packSize    Decimal? @db.Decimal(12, 3) // if sold per pack, units per pack
+  packPrice   Decimal? @db.Decimal(10, 2) // price per pack (if applicable)
+  minOrderQty Decimal? @db.Decimal(12, 3)
+  leadTimeDays Int?
+  isPreferred Boolean @default(false)
+
+  lastPurchasePrice Decimal? @db.Decimal(10, 4)
+  lastPurchaseDate  DateTime?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([supplierId, materialId])
+  @@index([materialId])
+}
+
+// Every change to stock. Current stock = sum(quantity). Keep it append-only.
+model StockMovement {
+  id         String            @id @default(cuid())
+  materialId String
+  material   Material          @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  type       StockMovementType
+  // Signed quantity in Material.unit: positive = in, negative = out.
+  quantity   Decimal           @db.Decimal(12, 3)
+  unitCost   Decimal?          @db.Decimal(10, 4) // cost per unit for PURCHASE lines
+  reason     String?
+
+  // Optional links: what caused the movement.
+  orderId    String?
+  order      Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  supplierId String?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  createdById String?
+  createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([materialId])
+  @@index([orderId])
+  @@index([type])
+}
+
+enum StockMovementType {
+  PURCHASE   // bought stock in
+  CONSUMPTION // used making an order/product
+  ADJUSTMENT  // manual correction / stocktake
+  RETURN      // returned to supplier / restocked
+  WASTE       // damaged / scrapped
+}
+
+// Bill of materials: how much of each material a product consumes, so the app
+// can compute material cost (and suggest a price) for standard and new products.
+model ProductMaterial {
+  id         String @id @default(cuid())
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  materialId String
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  // Quantity of the material (in Material.unit) used per single product.
+  quantity   Decimal  @db.Decimal(12, 4)
+  notes      String?
+
+  @@unique([productId, materialId])
+  @@index([materialId])
+}
+
+// ===========================================================================
+// NOTIFICATIONS & SEQUENTIAL COUNTERS
+// ===========================================================================
+
+// A log of every notification the app sent you (and later, customers).
+model NotificationLog {
+  id        String             @id @default(cuid())
+  type      NotificationType
+  channel   String             @default("email")
+  orderId   String?
+  order     Order?             @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  subject   String?
+  status    NotificationStatus @default(SENT)
+  error     String?
+  createdAt DateTime           @default(now())
+
+  @@index([orderId])
+}
+
+enum NotificationType {
+  NEW_ORDER
+  INVOICE_DRAFT_READY
+  PAYMENT_RECEIVED
+  ORDER_STATUS_CHANGED
+  LOW_STOCK
+}
+
+enum NotificationStatus {
+  SENT
+  FAILED
+}
+
+// Atomic sequential counters for order and invoice numbers.
+// One row per (name, year); increment inside a transaction to avoid gaps/dupes.
+model Counter {
+  id      String @id @default(cuid())
+  name    String // "order" | "invoice"
+  year    Int
+  value   Int    @default(0)
+
+  @@unique([name, year])
+}
