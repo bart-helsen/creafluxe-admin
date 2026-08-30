@@ -1,10 +1,17 @@
 import NextAuth from "next-auth";
 import { authConfig } from "@/lib/auth.config";
 
-// Protect the whole app with Auth.js. This uses ONLY the edge-safe config
-// (no Prisma / bcrypt), so it can run in the Edge runtime. The route-level
-// decision lives in `authConfig.callbacks.authorized`.
-export const { auth: middleware } = NextAuth(authConfig);
+// Auth.js's `auth` doubles as the middleware function. Exporting it as the
+// DEFAULT export is the form Next.js reliably detects during a production
+// build (a destructured named export is not recognised by the build's static
+// analysis, even though it works in `next dev`).
+//
+// This uses ONLY the edge-safe config (no Prisma / bcrypt), so it runs in the
+// Edge runtime; the route-level decision lives in
+// `authConfig.callbacks.authorized`.
+const { auth } = NextAuth(authConfig);
+
+export default auth;
 
 export const config = {
   // Run on every route except Next.js internals and static assets.
