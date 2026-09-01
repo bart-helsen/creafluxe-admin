@@ -3,16 +3,16 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import SignOutButton from "@/components/SignOutButton";
 
-// Navigation. Only the dashboard home exists in Phase 0; the rest are the
-// screens that arrive in later phases (see the blueprint roadmap, doc 07).
+// Navigation. Phases 0–2b are live; later screens keep their "coming" badge
+// (see the blueprint roadmap, doc 07).
 const NAV = [
   { href: "/", label: "Dashboard", phase: null },
   { href: "/orders", label: "Bestellingen", phase: null },
   { href: "/invoices", label: "Facturen", phase: null },
-  { href: "/products", label: "Catalogus", phase: "Fase 2" },
-  { href: "/designs", label: "Ontwerpen", phase: "Fase 2" },
-  { href: "/materials", label: "Materialen", phase: "Fase 2b" },
-  { href: "/suppliers", label: "Leveranciers", phase: "Fase 2b" },
+  { href: "/customers", label: "Klanten", phase: null },
+  { href: "/products", label: "Catalogus", phase: null },
+  { href: "/materials", label: "Materialen", phase: null },
+  { href: "/suppliers", label: "Leveranciers", phase: null },
 ];
 
 export default async function DashboardLayout({

@@ -1,22 +1,43 @@
 import Link from "next/link";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { formatEUR, formatDateTime } from "@/lib/money";
 import { STATUS_BUCKETS, STATUS_LABELS } from "@/server/orders/changeStatus";
 
-// Live dashboard: the three order buckets, draft-invoice count, and the most
-// recent orders — the at-a-glance view of the workshop's day.
+// Live dashboard: the order buckets, draft-invoice count, low-stock warning and
+// this-month figures, plus the most recent orders — the at-a-glance view of the
+// workshop's day.
 
 export default async function DashboardHome() {
-  const [newCount, openCount, draftCount, recent] = await Promise.all([
-    prisma.order.count({ where: { status: { in: STATUS_BUCKETS.NEW } } }),
-    prisma.order.count({ where: { status: { in: STATUS_BUCKETS.OPEN } } }),
-    prisma.invoice.count({ where: { status: "DRAFT" } }),
-    prisma.order.findMany({
-      include: { customer: true },
-      orderBy: { createdAt: "desc" },
-      take: 8,
-    }),
-  ]);
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+
+  const [newCount, openCount, draftCount, materials, monthOrders, monthPaid, recent] =
+    await Promise.all([
+      prisma.order.count({ where: { status: { in: STATUS_BUCKETS.NEW } } }),
+      prisma.order.count({ where: { status: { in: STATUS_BUCKETS.OPEN } } }),
+      prisma.invoice.count({ where: { status: "DRAFT" } }),
+      prisma.material.findMany({
+        where: { active: true },
+        select: { stockQuantity: true, reorderLevel: true },
+      }),
+      prisma.order.count({ where: { createdAt: { gte: monthStart } } }),
+      prisma.invoice.aggregate({
+        _sum: { total: true },
+        where: { status: "PAID", updatedAt: { gte: monthStart } },
+      }),
+      prisma.order.findMany({
+        include: { customer: true },
+        orderBy: { createdAt: "desc" },
+        take: 8,
+      }),
+    ]);
+
+  const lowCount = materials.filter((m) =>
+    new Prisma.Decimal(m.stockQuantity).lte(m.reorderLevel),
+  ).length;
+  const monthRevenue = monthPaid._sum.total?.toString() ?? "0";
 
   return (
     <div className="page">
@@ -41,10 +62,28 @@ export default async function DashboardHome() {
           <span className="stat-value">{draftCount}</span>
           <span className="stat-hint">Te controleren</span>
         </Link>
-        <div className="stat-card">
+        <Link
+          href="/materials?filter=low"
+          className="stat-card stat-card--link"
+        >
           <span className="stat-label">Materialen laag</span>
-          <span className="stat-value">—</span>
-          <span className="stat-hint">Fase 2b</span>
+          <span className={`stat-value ${lowCount > 0 ? "stock-low" : ""}`}>
+            {lowCount}
+          </span>
+          <span className="stat-hint">Op of onder bestelpunt</span>
+        </Link>
+      </section>
+
+      <section className="card-grid">
+        <div className="stat-card">
+          <span className="stat-label">Bestellingen deze maand</span>
+          <span className="stat-value">{monthOrders}</span>
+          <span className="stat-hint">Sinds de 1e</span>
+        </div>
+        <div className="stat-card">
+          <span className="stat-label">Omzet deze maand</span>
+          <span className="stat-value">{formatEUR(monthRevenue)}</span>
+          <span className="stat-hint">Betaalde facturen</span>
         </div>
       </section>
 

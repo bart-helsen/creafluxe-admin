@@ -663,8 +663,217 @@ code {
   flex-shrink: 0;
 }
 
+/* ---------- Forms (catalogue + inventory) ---------- */
+.header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.header-actions .btn-ghost--dark,
+.header-actions .btn-primary {
+  width: auto;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* btn-primary is used as a link in a few headers — keep it inline there. */
+a.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.form-col-2 {
+  grid-column: 1 / -1;
+}
+
+.form-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.form-actions .btn-primary,
+.form-actions .btn-ghost--dark {
+  width: auto;
+}
+
+.form-grid .field input,
+.form-grid .field select {
+  font-weight: 400;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fff;
+  color: var(--ink);
+  width: 100%;
+}
+
+.form-grid .field input:disabled {
+  background: #f5f6f8;
+  color: var(--muted);
+}
+
+.form-grid .field input:focus,
+.form-grid .field select:focus,
+.stack-form input:focus,
+.stack-form select:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(22, 34, 58, 0.12);
+}
+
+.check-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.check-field input {
+  width: auto;
+}
+
+/* Inline "add a row" forms (options, BOM lines) */
+.inline-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.inline-form input,
+.inline-form select {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.inline-form input {
+  min-width: 120px;
+}
+
+.inline-form .btn-ghost--dark {
+  width: auto;
+}
+
+/* Danger / delete row action */
+.row-action {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.btn-link-danger {
+  border: none;
+  background: none;
+  color: var(--danger);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.btn-link-danger:hover {
+  text-decoration: underline;
+}
+
+/* Stacked master files list */
+.files--stacked {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.plain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Low-stock emphasis */
+.stock-low {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.stock-flag {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: #fff;
+  background: var(--danger);
+  padding: 1px 6px;
+  border-radius: 4px;
+  vertical-align: middle;
+}
+
+/* Quote calculator */
+.quote-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.quote-row {
+  display: grid;
+  grid-template-columns: 1fr 120px;
+  gap: 8px;
+}
+
+.quote-row select,
+.quote-row input,
+.quote-hours input {
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fff;
+  color: var(--ink);
+  width: 100%;
+}
+
+.quote-hours {
+  max-width: 240px;
+}
+
 @media (max-width: 900px) {
   .detail-grid {
+    grid-template-columns: 1fr;
+  }
+  .form-grid {
     grid-template-columns: 1fr;
   }
 }
