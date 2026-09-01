@@ -28,10 +28,12 @@ export const authConfig = {
 
       // Public machine endpoints authenticate with a shared X-Api-Key inside the
       // route handler (docs/04 §A), NOT with a dashboard session — so the login
-      // gate must let them through. Includes future webhooks (Mollie/Peppol).
+      // gate must let them through. Includes the low-stock cron (its own
+      // CRON_SECRET check) and future webhooks (Mollie/Peppol).
       if (
         pathname === "/api/orders/intake" ||
         pathname === "/api/uploads/presign" ||
+        pathname.startsWith("/api/cron/") ||
         pathname.startsWith("/api/webhooks/")
       ) {
         return true;
