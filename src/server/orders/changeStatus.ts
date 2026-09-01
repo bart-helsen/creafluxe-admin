@@ -1,5 +1,6 @@
 import type { OrderStatus } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { consumeForOrder } from "@/server/orders/consumeForOrder";
 
 // Move an order along its lifecycle (Flow 4, docs/05). Every change writes an
 // OrderStatusEvent, which powers the timeline on the order page and the audit
@@ -33,6 +34,17 @@ export async function changeOrderStatus(params: {
       data: { status: params.toStatus },
     }),
   ]);
+
+  // Entering production deducts the bill-of-materials from stock (docs/11).
+  // Best-effort and idempotent: it never rolls back the status change, and a
+  // material without a BOM simply isn't touched.
+  if (params.toStatus === "IN_PRODUCTION") {
+    try {
+      await consumeForOrder(params.orderId, params.changedById);
+    } catch (err) {
+      console.error(`[status] stock consumption failed for ${params.orderId}:`, err);
+    }
+  }
 }
 
 // The three buckets the dashboard shows (docs/03 + Flow 4).

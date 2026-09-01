@@ -66,6 +66,12 @@ export function buildCustomKey(fileName: string): string {
   return `custom/${Date.now()}-${randomBytes(6).toString("hex")}-${safe}`;
 }
 
+/** Build a collision-proof storage key for a maintained master/library file. */
+export function buildMasterKey(fileName: string): string {
+  const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
+  return `master/${Date.now()}-${randomBytes(6).toString("hex")}-${safe}`;
+}
+
 /** A short-lived URL the browser/site can PUT a file to. */
 export async function presignUpload(
   storageKey: string,
