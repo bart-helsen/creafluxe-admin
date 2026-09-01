@@ -1,0 +1,207 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import type { ProductOptionType } from "@prisma/client";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+import { money, toDecimal } from "@/lib/money";
+import {
+  isR2Configured,
+  buildMasterKey,
+  putObject,
+  ALLOWED_UPLOAD_MIME,
+  MAX_UPLOAD_BYTES,
+} from "@/lib/r2";
+
+// Server actions behind the Phase 2 catalogue + customer screens. Each re-checks
+// the session (defence in depth on top of the middleware) and revalidates the
+// affected pages so the UI reflects the change immediately.
+
+async function requireUserId(): Promise<string> {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("Not authenticated");
+  return session.user.id;
+}
+
+function str(formData: FormData, key: string): string {
+  return String(formData.get(key) ?? "").trim();
+}
+
+function optStr(formData: FormData, key: string): string | null {
+  const v = str(formData, key);
+  return v.length ? v : null;
+}
+
+// ---------------------------------------------------------------------------
+// Products
+// ---------------------------------------------------------------------------
+
+export async function createProductAction(formData: FormData): Promise<void> {
+  await requireUserId();
+  const sku = str(formData, "sku");
+  const name = str(formData, "name");
+  if (!sku || !name) throw new Error("SKU en naam zijn verplicht.");
+
+  const product = await prisma.product.create({
+    data: {
+      sku,
+      name,
+      description: optStr(formData, "description"),
+      basePrice: money(str(formData, "basePrice") || "0"),
+      vatRate: toDecimal(str(formData, "vatRate") || "21"),
+      filter: optStr(formData, "filter"),
+      active: formData.get("active") != null,
+      sortOrder: Number(str(formData, "sortOrder") || "0") || 0,
+    },
+  });
+
+  revalidatePath("/products");
+  redirect(`/products/${product.id}`);
+}
+
+export async function updateProductAction(formData: FormData): Promise<void> {
+  await requireUserId();
+  const id = str(formData, "id");
+  const name = str(formData, "name");
+  if (!id || !name) throw new Error("Naam is verplicht.");
+
+  await prisma.product.update({
+    where: { id },
+    data: {
+      name,
+      description: optStr(formData, "description"),
+      basePrice: money(str(formData, "basePrice") || "0"),
+      vatRate: toDecimal(str(formData, "vatRate") || "21"),
+      filter: optStr(formData, "filter"),
+      active: formData.get("active") != null,
+      sortOrder: Number(str(formData, "sortOrder") || "0") || 0,
+    },
+  });
+
+  revalidatePath("/products");
+  revalidatePath(`/products/${id}`);
+}
+
+// ---------------------------------------------------------------------------
+// Product options (materials / sizes / styles / designs)
+// ---------------------------------------------------------------------------
+
+const OPTION_TYPES: ProductOptionType[] = ["MATERIAL", "SIZE", "STYLE", "DESIGN"];
+
+export async function addOptionAction(formData: FormData): Promise<void> {
+  await requireUserId();
+  const productId = str(formData, "productId");
+  const type = str(formData, "type") as ProductOptionType;
+  const value = str(formData, "value");
+  if (!productId || !OPTION_TYPES.includes(type) || !value) {
+    throw new Error("Type en waarde zijn verplicht.");
+  }
+
+  await prisma.productOption.upsert({
+    where: { productId_type_value: { productId, type, value } },
+    update: {
+      priceDelta: money(str(formData, "priceDelta") || "0"),
+      active: true,
+    },
+    create: {
+      productId,
+      type,
+      value,
+      priceDelta: money(str(formData, "priceDelta") || "0"),
+    },
+  });
+
+  revalidatePath(`/products/${productId}`);
+}
+
+export async function deleteOptionAction(formData: FormData): Promise<void> {
+  await requireUserId();
+  const id = str(formData, "id");
+  const productId = str(formData, "productId");
+  await prisma.productOption.delete({ where: { id } });
+  revalidatePath(`/products/${productId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Master design files — uploaded through the server action straight to R2.
+// ---------------------------------------------------------------------------
+
+export async function uploadMasterAction(formData: FormData): Promise<void> {
+  await requireUserId();
+  const productId = str(formData, "productId");
+  const file = formData.get("file");
+  if (!productId) throw new Error("Onbekend product.");
+  if (!(file instanceof File) || file.size === 0) {
+    throw new Error("Kies een bestand om te uploaden.");
+  }
+  if (!isR2Configured()) {
+    throw new Error(
+      "Bestandsopslag (R2) is niet geconfigureerd — kan geen masterbestand uploaden.",
+    );
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    throw new Error("Bestand is groter dan 10 MB.");
+  }
+  const mimeType = file.type || "application/octet-stream";
+  if (!ALLOWED_UPLOAD_MIME.has(mimeType)) {
+    throw new Error(`Bestandstype niet toegestaan: ${mimeType}.`);
+  }
+
+  const storageKey = buildMasterKey(file.name);
+  const bytes = Buffer.from(await file.arrayBuffer());
+  await putObject(storageKey, bytes, mimeType);
+
+  await prisma.designAsset.create({
+    data: {
+      kind: "MASTER",
+      label: optStr(formData, "label") ?? file.name,
+      storageKey,
+      fileName: file.name,
+      mimeType,
+      sizeBytes: file.size,
+      productId,
+      designValue: optStr(formData, "designValue"),
+    },
+  });
+
+  revalidatePath(`/products/${productId}`);
+}
+
+export async function deleteMasterAction(formData: FormData): Promise<void> {
+  await requireUserId();
+  const id = str(formData, "id");
+  const productId = str(formData, "productId");
+  // We only remove the DB record; the R2 object can be garbage-collected later.
+  await prisma.designAsset.delete({ where: { id } });
+  revalidatePath(`/products/${productId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Customers
+// ---------------------------------------------------------------------------
+
+export async function updateCustomerAction(formData: FormData): Promise<void> {
+  await requireUserId();
+  const id = str(formData, "id");
+  if (!id) throw new Error("Onbekende klant.");
+
+  await prisma.customer.update({
+    where: { id },
+    data: {
+      name: str(formData, "name") || undefined,
+      phone: optStr(formData, "phone"),
+      isBusiness: formData.get("isBusiness") != null,
+      vatNumber: optStr(formData, "vatNumber"),
+      companyName: optStr(formData, "companyName"),
+      addressStreet: optStr(formData, "addressStreet"),
+      addressPostal: optStr(formData, "addressPostal"),
+      addressCity: optStr(formData, "addressCity"),
+      addressCountry: optStr(formData, "addressCountry"),
+      notes: optStr(formData, "notes"),
+    },
+  });
+
+  revalidatePath(`/customers/${id}`);
+  revalidatePath("/customers");
+}
