@@ -869,6 +869,44 @@ a.btn-primary {
   max-width: 240px;
 }
 
+/* Product cost calculator */
+.calc-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.calc-form h3 {
+  margin: 12px 0 0;
+}
+
+.calc-row {
+  display: grid;
+  grid-template-columns: 1fr 120px;
+  gap: 8px;
+}
+
+.calc-row select,
+.calc-row input,
+.calc-narrow input {
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fff;
+  color: var(--ink);
+  width: 100%;
+}
+
+.calc-narrow {
+  max-width: 260px;
+}
+
+.detail-side .totals-box + .totals-box {
+  margin-top: 12px;
+}
+
 @media (max-width: 900px) {
   .detail-grid {
     grid-template-columns: 1fr;

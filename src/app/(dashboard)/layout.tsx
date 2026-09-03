@@ -11,7 +11,9 @@ const NAV = [
   { href: "/invoices", label: "Facturen", phase: null },
   { href: "/customers", label: "Klanten", phase: null },
   { href: "/products", label: "Catalogus", phase: null },
+  { href: "/product-cost", label: "Kostprijs", phase: null },
   { href: "/materials", label: "Materialen", phase: null },
+  { href: "/machines", label: "Machines", phase: null },
   { href: "/suppliers", label: "Leveranciers", phase: null },
 ];
 
