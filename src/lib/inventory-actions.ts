@@ -112,22 +112,59 @@ export async function createMaterialAction(formData: FormData): Promise<void> {
   const category = str(formData, "category") as MaterialCategory;
   if (!sku || !name) throw new Error("SKU en naam zijn verplicht.");
 
-  const material = await prisma.material.create({
-    data: {
-      sku,
-      name,
-      category: CATEGORIES.includes(category) ? category : "OTHER",
-      description: optStr(formData, "description"),
-      unit: str(formData, "unit") || "stuk",
-      reorderLevel: toDecimal(str(formData, "reorderLevel") || "0"),
-      reorderQuantity: optDec(formData, "reorderQuantity"),
-      unitCost: toDecimal(str(formData, "unitCost") || "0"),
-      reorderStore: optStr(formData, "reorderStore"),
-      reorderUrl: optStr(formData, "reorderUrl"),
-      notes: optStr(formData, "notes"),
-      // stockQuantity stays 0; use a stock movement (or an opening ADJUSTMENT).
-    },
+  // Optional reorder source: an existing supplier (picked) or a new one (named),
+  // with its price and a link to this material's product page. When given it
+  // becomes the material's preferred supplier and working unit cost, so the
+  // order form can reuse it later instead of asking again.
+  const existingSupplierId = optStr(formData, "supplierId");
+  const newSupplierName = optStr(formData, "newSupplierName");
+  const supplierPrice = optDec(formData, "supplierPrice");
+  const productUrl = optStr(formData, "productUrl");
+  const baseUnitCost = toDecimal(str(formData, "unitCost") || "0");
+  // A supplier price, when supplied, wins over the plain unit-cost field.
+  const workingCost = supplierPrice ?? baseUnitCost;
+
+  const material = await prisma.$transaction(async (tx) => {
+    const created = await tx.material.create({
+      data: {
+        sku,
+        name,
+        category: CATEGORIES.includes(category) ? category : "OTHER",
+        description: optStr(formData, "description"),
+        unit: str(formData, "unit") || "stuk",
+        reorderLevel: toDecimal(str(formData, "reorderLevel") || "0"),
+        reorderQuantity: optDec(formData, "reorderQuantity"),
+        unitCost: workingCost,
+        notes: optStr(formData, "notes"),
+        // stockQuantity stays 0; use a stock movement (or an opening ADJUSTMENT).
+      },
+    });
+
+    // Resolve a supplier: an existing pick wins; otherwise create the named one.
+    let supplierId = existingSupplierId;
+    if (!supplierId && newSupplierName) {
+      const supplier = await tx.supplier.create({ data: { name: newSupplierName } });
+      supplierId = supplier.id;
+    }
+
+    if (supplierId) {
+      await tx.supplierMaterial.create({
+        data: {
+          materialId: created.id,
+          supplierId,
+          unitPrice: supplierPrice ?? workingCost,
+          productUrl,
+          isPreferred: true,
+        },
+      });
+      await tx.material.update({
+        where: { id: created.id },
+        data: { currentSupplierId: supplierId, unitCost: supplierPrice ?? workingCost },
+      });
+    }
+    return created;
   });
+
   revalidatePath("/materials");
   redirect(`/materials/${material.id}`);
 }
@@ -149,8 +186,6 @@ export async function updateMaterialAction(formData: FormData): Promise<void> {
       reorderLevel: toDecimal(str(formData, "reorderLevel") || "0"),
       reorderQuantity: optDec(formData, "reorderQuantity"),
       unitCost: toDecimal(str(formData, "unitCost") || "0"),
-      reorderStore: optStr(formData, "reorderStore"),
-      reorderUrl: optStr(formData, "reorderUrl"),
       notes: optStr(formData, "notes"),
       active: formData.get("active") != null,
     },
@@ -217,6 +252,7 @@ export async function upsertSupplierPriceAction(
       update: {
         unitPrice: toDecimal(unitPrice),
         supplierSku: optStr(formData, "supplierSku"),
+        productUrl: optStr(formData, "productUrl"),
         packSize: optDec(formData, "packSize"),
         packPrice: optDec(formData, "packPrice"),
         minOrderQty: optDec(formData, "minOrderQty"),
@@ -230,6 +266,7 @@ export async function upsertSupplierPriceAction(
         supplierId,
         unitPrice: toDecimal(unitPrice),
         supplierSku: optStr(formData, "supplierSku"),
+        productUrl: optStr(formData, "productUrl"),
         packSize: optDec(formData, "packSize"),
         packPrice: optDec(formData, "packPrice"),
         minOrderQty: optDec(formData, "minOrderQty"),

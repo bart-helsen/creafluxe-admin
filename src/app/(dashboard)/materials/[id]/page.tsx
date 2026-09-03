@@ -9,10 +9,10 @@ import { prisma } from "@/lib/db";
 import { formatEUR, formatDateTime } from "@/lib/money";
 import {
   updateMaterialAction,
-  recordMovementAction,
   upsertSupplierPriceAction,
   deleteSupplierPriceAction,
 } from "@/lib/inventory-actions";
+import MovementForm from "@/components/MovementForm";
 
 const CATEGORY_LABELS: Record<MaterialCategory, string> = {
   WOOD: "Hout",
@@ -67,6 +67,23 @@ export default async function MaterialDetailPage({
     material.reorderLevel,
   );
 
+  // Preferred supplier drives the "order at" link and the order-form defaults.
+  const preferred =
+    material.supplierMaterials.find((sm) => sm.isPreferred) ?? null;
+  const priceBySupplier: Record<string, string> = Object.fromEntries(
+    material.supplierMaterials.map((sm) => [
+      sm.supplierId,
+      sm.unitPrice.toString(),
+    ]),
+  );
+  // Pre-select a supplier so the order form's cost is filled in automatically:
+  // the current/preferred one if set, otherwise the cheapest known price.
+  const defaultSupplierId =
+    material.currentSupplierId ??
+    preferred?.supplierId ??
+    material.supplierMaterials[0]?.supplierId ??
+    "";
+
   return (
     <div className="page">
       <header className="page-header detail-header">
@@ -82,21 +99,27 @@ export default async function MaterialDetailPage({
             </span>
             {low && <span className="stock-flag">laag</span>}
           </p>
-          {(material.reorderStore || material.reorderUrl) && (
+          {preferred && (
             <p className="muted small">
               Bestellen bij:{" "}
-              {material.reorderUrl ? (
+              {preferred.productUrl ? (
                 <a
-                  href={material.reorderUrl}
+                  href={preferred.productUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="link-strong"
                 >
-                  {material.reorderStore || material.reorderUrl}
+                  {preferred.supplier.name}
                 </a>
               ) : (
-                material.reorderStore
-              )}
+                <Link
+                  href={`/suppliers/${preferred.supplierId}`}
+                  className="link-strong"
+                >
+                  {preferred.supplier.name}
+                </Link>
+              )}{" "}
+              · {formatEUR(preferred.unitPrice.toString())}/{material.unit}
             </p>
           )}
         </div>
@@ -111,52 +134,14 @@ export default async function MaterialDetailPage({
               Elke aankoop, verbruik of correctie. Het teken volgt automatisch uit
               het type; een aankoop werkt ook je eenheidskost bij.
             </p>
-            <form action={recordMovementAction} className="form-grid">
-              <input type="hidden" name="materialId" value={material.id} />
-              <label className="field">
-                Type
-                <select name="type" defaultValue="PURCHASE">
-                  {(Object.keys(MOVEMENT_LABELS) as StockMovementType[]).map(
-                    (t) => (
-                      <option key={t} value={t}>
-                        {MOVEMENT_LABELS[t]}
-                      </option>
-                    ),
-                  )}
-                </select>
-              </label>
-              <label className="field">
-                Aantal ({material.unit})
-                <input name="quantity" inputMode="decimal" required />
-              </label>
-              <label className="field">
-                Eenheidskost (bij aankoop)
-                <input name="unitCost" inputMode="decimal" placeholder="excl. btw" />
-              </label>
-              <label className="field">
-                Leverancier (bij aankoop)
-                <select name="supplierId" defaultValue="">
-                  <option value="">—</option>
-                  {suppliers.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field form-col-2">
-                Reden / notitie
-                <input name="reason" placeholder="Optioneel" />
-              </label>
-              <div className="form-actions form-col-2">
-                <button type="submit" className="btn-primary">
-                  Beweging boeken
-                </button>
-                <span className="muted small">
-                  Correctie mag negatief zijn (bv. −2 om af te boeken).
-                </span>
-              </div>
-            </form>
+            <MovementForm
+              materialId={material.id}
+              unit={material.unit}
+              suppliers={suppliers}
+              priceBySupplier={priceBySupplier}
+              defaultSupplierId={defaultSupplierId}
+              defaultUnitCost={material.unitCost.toString()}
+            />
           </section>
 
           {/* Movement history */}
@@ -246,6 +231,20 @@ export default async function MaterialDetailPage({
                         <td className="muted small">{sm.supplierSku ?? "—"}</td>
                         <td>
                           {formatEUR(sm.unitPrice.toString())}/{material.unit}
+                          {sm.productUrl && (
+                            <>
+                              {" "}
+                              <a
+                                href={sm.productUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="small"
+                                title="Productpagina"
+                              >
+                                ↗
+                              </a>
+                            </>
+                          )}
                         </td>
                         <td className="muted small">
                           {sm.leadTimeDays != null
@@ -302,6 +301,10 @@ export default async function MaterialDetailPage({
                 <label className="field">
                   Leverancier-SKU
                   <input name="supplierSku" />
+                </label>
+                <label className="field">
+                  Productlink
+                  <input name="productUrl" type="url" placeholder="https://…" />
                 </label>
                 <label className="field">
                   Levertijd (dagen)
@@ -405,23 +408,6 @@ export default async function MaterialDetailPage({
                   name="reorderQuantity"
                   inputMode="decimal"
                   defaultValue={material.reorderQuantity?.toString() ?? ""}
-                />
-              </label>
-              <label className="field">
-                Bestellen bij
-                <input
-                  name="reorderStore"
-                  defaultValue={material.reorderStore ?? ""}
-                  placeholder="bv. Kevelam"
-                />
-              </label>
-              <label className="field">
-                Webshoplink
-                <input
-                  name="reorderUrl"
-                  type="url"
-                  defaultValue={material.reorderUrl ?? ""}
-                  placeholder="https://…"
                 />
               </label>
               <label className="field">
