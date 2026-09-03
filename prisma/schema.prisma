@@ -433,9 +433,6 @@ model Material {
   currentSupplierId String?
   currentSupplier   Supplier? @relation("CurrentSupplier", fields: [currentSupplierId], references: [id], onDelete: SetNull)
 
-  // Where to reorder this material: the shop and a link to its product page.
-  reorderStore String? // shop/webshop name, e.g. "Kevelam"
-  reorderUrl   String? // link to the product page to reorder from
   active    Boolean  @default(true)
   notes     String?
   createdAt DateTime @default(now())
@@ -469,6 +466,7 @@ model SupplierMaterial {
   material   Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
 
   supplierSku String? // the supplier's article code
+  productUrl  String? // link to this material's product page at this supplier
   unitPrice   Decimal @db.Decimal(10, 4) // price per Material.unit (excl. VAT)
   packSize    Decimal? @db.Decimal(12, 3) // if sold per pack, units per pack
   packPrice   Decimal? @db.Decimal(10, 2) // price per pack (if applicable)
