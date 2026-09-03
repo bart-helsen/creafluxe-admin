@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { MaterialCategory } from "@prisma/client";
+import { prisma } from "@/lib/db";
 import { createMaterialAction } from "@/lib/inventory-actions";
 
 const CATEGORY_LABELS: Record<MaterialCategory, string> = {
@@ -12,7 +13,13 @@ const CATEGORY_LABELS: Record<MaterialCategory, string> = {
   OTHER: "Overig",
 };
 
-export default function NewMaterialPage() {
+export default async function NewMaterialPage() {
+  const suppliers = await prisma.supplier.findMany({
+    where: { active: true },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
+
   return (
     <div className="page">
       <header className="page-header">
@@ -62,14 +69,6 @@ export default function NewMaterialPage() {
             Bestelhoeveelheid
             <input name="reorderQuantity" inputMode="decimal" placeholder="Optioneel" />
           </label>
-          <label className="field">
-            Bestellen bij
-            <input name="reorderStore" placeholder="bv. Kevelam" />
-          </label>
-          <label className="field">
-            Webshoplink
-            <input name="reorderUrl" type="url" placeholder="https://…" />
-          </label>
           <label className="field form-col-2">
             Omschrijving
             <input name="description" placeholder="Optioneel" />
@@ -78,6 +77,37 @@ export default function NewMaterialPage() {
             Notities
             <input name="notes" placeholder="Optioneel" />
           </label>
+
+          {/* Reorder source — becomes the material's preferred supplier + price. */}
+          <p className="muted small form-col-2" style={{ margin: "0.25rem 0 0" }}>
+            <strong>Bestellen bij</strong> (optioneel) — leverancier, prijs en
+            productlink. Deze prijs wordt de eenheidskost en vult je aankopen
+            straks automatisch aan.
+          </p>
+          <label className="field">
+            Leverancier
+            <select name="supplierId" defaultValue="">
+              <option value="">— (of nieuwe hieronder)</option>
+              {suppliers.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            Nieuwe leverancier
+            <input name="newSupplierName" placeholder="bv. Modulor" />
+          </label>
+          <label className="field">
+            Prijs bij leverancier (excl. btw)
+            <input name="supplierPrice" inputMode="decimal" placeholder="Optioneel" />
+          </label>
+          <label className="field">
+            Productlink
+            <input name="productUrl" type="url" placeholder="https://…" />
+          </label>
+
           <div className="form-actions form-col-2">
             <button type="submit" className="btn-primary">
               Materiaal aanmaken
