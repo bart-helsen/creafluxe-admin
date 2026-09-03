@@ -535,6 +535,47 @@ model ProductMaterial {
 }
 
 // ===========================================================================
+// MACHINES — production equipment used to make products.
+//   Each machine's cost-per-minute is DERIVED (never typed by hand) from:
+//     1. Depreciation — purchasePrice spread over expected lifetimeHours.
+//     2. Energy       — powerKw × the electricity price (€/kWh, set in env so
+//                       one change updates every machine).
+//     3. Maintenance  — maintenancePerYear spread over usageHoursPerYear.
+//   costPerHour   = purchasePrice/lifetimeHours
+//                 + powerKw × electricityPrice
+//                 + maintenancePerYear/usageHoursPerYear
+//   costPerMinute = costPerHour / 60
+//   The product cost calculator multiplies costPerMinute by the machine time a
+//   product needs. See src/lib/machine-cost.ts for the single implementation.
+// ===========================================================================
+
+model Machine {
+  id          String  @id @default(cuid())
+  name        String // "Glowforge Pro", "Creality K1", ...
+  description String?
+
+  // Depreciation: what it cost, and how many operating hours you expect from it.
+  purchasePrice Decimal @default(0.00) @db.Decimal(10, 2) // EUR, excl. VAT
+  lifetimeHours Decimal @default(0)    @db.Decimal(12, 2) // total expected run hours
+
+  // Energy: electrical power the machine draws while running (kW). The price per
+  // kWh is a single business-wide setting (env PRICING_ELECTRICITY_PRICE).
+  powerKw Decimal @default(0) @db.Decimal(10, 3)
+
+  // Maintenance: yearly upkeep (service, parts, consumables) spread over the
+  // hours you actually run the machine per year.
+  maintenancePerYear Decimal @default(0.00) @db.Decimal(10, 2)
+  usageHoursPerYear  Decimal @default(0)    @db.Decimal(12, 2)
+
+  active    Boolean  @default(true)
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active])
+}
+
+// ===========================================================================
 // NOTIFICATIONS & SEQUENTIAL COUNTERS
 // ===========================================================================
 
