@@ -82,6 +82,23 @@ export default async function MaterialDetailPage({
             </span>
             {low && <span className="stock-flag">laag</span>}
           </p>
+          {(material.reorderStore || material.reorderUrl) && (
+            <p className="muted small">
+              Bestellen bij:{" "}
+              {material.reorderUrl ? (
+                <a
+                  href={material.reorderUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="link-strong"
+                >
+                  {material.reorderStore || material.reorderUrl}
+                </a>
+              ) : (
+                material.reorderStore
+              )}
+            </p>
+          )}
         </div>
       </header>
 
@@ -375,7 +392,7 @@ export default async function MaterialDetailPage({
                 />
               </label>
               <label className="field">
-                Bestelpunt
+                Minimumvoorraad
                 <input
                   name="reorderLevel"
                   inputMode="decimal"
@@ -391,10 +408,20 @@ export default async function MaterialDetailPage({
                 />
               </label>
               <label className="field">
-                Opslaglocatie
+                Bestellen bij
                 <input
-                  name="storageLocation"
-                  defaultValue={material.storageLocation ?? ""}
+                  name="reorderStore"
+                  defaultValue={material.reorderStore ?? ""}
+                  placeholder="bv. Kevelam"
+                />
+              </label>
+              <label className="field">
+                Webshoplink
+                <input
+                  name="reorderUrl"
+                  type="url"
+                  defaultValue={material.reorderUrl ?? ""}
+                  placeholder="https://…"
                 />
               </label>
               <label className="field">

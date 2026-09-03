@@ -8,7 +8,7 @@
  * case-insensitive; extra columns are ignored):
  *
  *   sku,name,category,unit,unitCost,reorderLevel,reorderQuantity,stockQuantity,
- *   storageLocation,description,notes
+ *   reorderStore,reorderUrl,description,notes
  *
  * - `category` is one of WOOD, PLASTIC, METAL, PAPER, GADGET, CONSUMABLE, OTHER
  *   (defaults to OTHER if blank/unknown).
@@ -91,7 +91,8 @@ async function main() {
     reorderLevel: col("reorderlevel"),
     reorderQuantity: col("reorderquantity"),
     stockQuantity: col("stockquantity"),
-    storageLocation: col("storagelocation"),
+    reorderStore: col("reorderstore"),
+    reorderUrl: col("reorderurl"),
     description: col("description"),
     notes: col("notes"),
   };
@@ -117,7 +118,8 @@ async function main() {
       unitCost: get(idx.unitCost) || "0",
       reorderLevel: get(idx.reorderLevel) || "0",
       reorderQuantity: get(idx.reorderQuantity) || null,
-      storageLocation: get(idx.storageLocation) || null,
+      reorderStore: get(idx.reorderStore) || null,
+      reorderUrl: get(idx.reorderUrl) || null,
       description: get(idx.description) || null,
       notes: get(idx.notes) || null,
     };

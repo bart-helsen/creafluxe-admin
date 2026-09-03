@@ -55,7 +55,7 @@ export default function NewMaterialPage() {
             <input name="unitCost" inputMode="decimal" defaultValue="0.00" />
           </label>
           <label className="field">
-            Bestelpunt
+            Minimumvoorraad
             <input name="reorderLevel" inputMode="decimal" defaultValue="0" />
           </label>
           <label className="field">
@@ -63,8 +63,12 @@ export default function NewMaterialPage() {
             <input name="reorderQuantity" inputMode="decimal" placeholder="Optioneel" />
           </label>
           <label className="field">
-            Opslaglocatie
-            <input name="storageLocation" placeholder="Optioneel" />
+            Bestellen bij
+            <input name="reorderStore" placeholder="bv. Kevelam" />
+          </label>
+          <label className="field">
+            Webshoplink
+            <input name="reorderUrl" type="url" placeholder="https://…" />
           </label>
           <label className="field form-col-2">
             Omschrijving

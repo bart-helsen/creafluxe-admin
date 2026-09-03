@@ -433,7 +433,9 @@ model Material {
   currentSupplierId String?
   currentSupplier   Supplier? @relation("CurrentSupplier", fields: [currentSupplierId], references: [id], onDelete: SetNull)
 
-  storageLocation String? // where it physically is
+  // Where to reorder this material: the shop and a link to its product page.
+  reorderStore String? // shop/webshop name, e.g. "Kevelam"
+  reorderUrl   String? // link to the product page to reorder from
   active    Boolean  @default(true)
   notes     String?
   createdAt DateTime @default(now())
