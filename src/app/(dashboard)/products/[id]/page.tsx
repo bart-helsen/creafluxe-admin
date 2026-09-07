@@ -2,9 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ProductOptionType } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { formatEUR } from "@/lib/money";
+import { formatEUR, formatDateTime } from "@/lib/money";
+import { formatPerMinute } from "@/lib/machine-cost";
 import { isR2Configured, presignDownload } from "@/lib/r2";
-import { computeProductCost } from "@/server/materials/costing";
+import {
+  computeProductCost,
+  computeStoredProductBuildCost,
+} from "@/server/materials/costing";
 import {
   updateProductAction,
   addOptionAction,
@@ -43,6 +47,19 @@ export default async function ProductDetailPage({
 
   const cost = await computeProductCost(product.id);
 
+  // Full production-cost breakdown (machine + material + labour) for products
+  // promoted from the cost calculator. null for catalogue products that were
+  // never costed that way.
+  const buildCost = await computeStoredProductBuildCost(
+    product.id,
+    Number(product.vatRate),
+  );
+  const hasFullCosting =
+    !!buildCost &&
+    (!!buildCost.machine ||
+      Number(buildCost.hours) > 0 ||
+      !!buildCost.snapshot);
+
   // Materials to offer in the "add BOM line" picker (exclude ones already used).
   const usedMaterialIds = new Set(product.bomLines.map((b) => b.materialId));
   const materials = await prisma.material.findMany({
@@ -78,6 +95,9 @@ export default async function ProductDetailPage({
             {product.sku} ·{" "}
             <span className="status-pill">
               {product.active ? "Actief" : "Inactief"}
+            </span>{" "}
+            <span className="status-pill">
+              {product.showOnWebshop ? "In webshop" : "Niet in webshop"}
             </span>
           </p>
         </div>
@@ -139,7 +159,15 @@ export default async function ProductDetailPage({
                   name="active"
                   defaultChecked={product.active}
                 />
-                Actief
+                Actief (staat in de catalogus)
+              </label>
+              <label className="check-field form-col-2">
+                <input
+                  type="checkbox"
+                  name="showOnWebshop"
+                  defaultChecked={product.showOnWebshop}
+                />
+                Tonen in de webshop
               </label>
               <div className="form-actions form-col-2">
                 <button type="submit" className="btn-primary">
@@ -310,6 +338,82 @@ export default async function ProductDetailPage({
               </form>
             )}
           </section>
+
+          {/* Full production cost — only for products promoted from the cost
+              calculator (machine + material + labour). Recomputed live from the
+              stored inputs; the snapshot shows the original promotion decision. */}
+          {hasFullCosting && buildCost && (
+            <section className="panel">
+              <h2>Volledige kostprijs</h2>
+              <p className="small muted">
+                Machinetijd, materiaal en arbeid — live herberekend met de
+                huidige tarieven. Overgenomen uit de kostprijscalculator bij het
+                promoveren.
+              </p>
+
+              <div className="totals-box" style={{ marginLeft: 0, maxWidth: "none" }}>
+                {buildCost.machine && (
+                  <div className="totals-line">
+                    <span>
+                      Machine ({buildCost.machineMinutes} min ×{" "}
+                      {formatPerMinute(buildCost.machine.costPerMinute)})
+                    </span>
+                    <span>{formatEUR(buildCost.machineCost)}</span>
+                  </div>
+                )}
+                <div className="totals-line">
+                  <span>Materiaalkost</span>
+                  <span>{formatEUR(buildCost.materialCost)}</span>
+                </div>
+                {Number(buildCost.hours) > 0 && (
+                  <div className="totals-line">
+                    <span>
+                      Arbeid ({buildCost.hours} u ×{" "}
+                      {formatEUR(buildCost.hourlyRate)})
+                    </span>
+                    <span>{formatEUR(buildCost.labourCost)}</span>
+                  </div>
+                )}
+                <div className="totals-line totals-line--strong">
+                  <span>Kostprijs nu (excl. btw)</span>
+                  <span>{formatEUR(buildCost.totalCost)}</span>
+                </div>
+                <div className="totals-line">
+                  <span>Richtprijs (+{buildCost.markupPercent}% marge)</span>
+                  <span>
+                    {formatEUR(buildCost.suggestedPrice)}
+                    <span className="muted small">
+                      {" "}
+                      · {formatEUR(buildCost.suggestedPriceIncl)} incl. btw
+                    </span>
+                  </span>
+                </div>
+              </div>
+
+              {buildCost.snapshot && (
+                <div className="totals-box" style={{ marginLeft: 0, maxWidth: "none" }}>
+                  <p className="small muted">
+                    Bij promoveren op{" "}
+                    {formatDateTime(buildCost.snapshot.promotedAt)}:
+                  </p>
+                  {buildCost.snapshot.costAtPromotion && (
+                    <div className="totals-line">
+                      <span>Kostprijs toen</span>
+                      <span>{formatEUR(buildCost.snapshot.costAtPromotion)}</span>
+                    </div>
+                  )}
+                  {buildCost.snapshot.priceAtPromotion && (
+                    <div className="totals-line">
+                      <span>Gekozen verkoopprijs (excl. btw)</span>
+                      <span>
+                        {formatEUR(buildCost.snapshot.priceAtPromotion)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
         </div>
 
         {/* Sidebar: master files */}

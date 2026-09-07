@@ -160,6 +160,15 @@ export interface BuildCostInput {
   lines: QuoteLineInput[];
   hours: number;
   finalPrice?: number | null;
+  /** VAT rate (%) used to derive the incl.-VAT figures. Defaults to 21. */
+  vatRate?: number | null;
+  /**
+   * How to read `finalPrice`: false/undefined = you typed an amount EXCL. VAT
+   * (B2B — a round net price); true = you typed an amount INCL. VAT (B2C — a
+   * round shelf price). Only affects how finalPrice is split into excl/incl; the
+   * margin is always taken on the net (excl.-VAT) amount, since VAT isn't yours.
+   */
+  finalPriceInclVat?: boolean;
 }
 
 export interface ProductBuildCost {
@@ -185,11 +194,15 @@ export interface ProductBuildCost {
   labourCost: string;
   totalCost: string;
   markupPercent: number;
-  suggestedPrice: string; // totalCost × (1 + markup/100)
-  roundedPrice: string; // suggestedPrice rounded to the nearest whole euro
-  finalPrice: string | null; // echoed back if you supplied one
-  margin: string | null; // finalPrice − totalCost
-  marginPercent: string | null; // margin as % of the final (sale) price
+  vatRate: number; // the VAT rate (%) used for the incl.-VAT figures
+  suggestedPrice: string; // totalCost × (1 + markup/100), excl. VAT
+  suggestedPriceIncl: string; // suggestedPrice × (1 + vat/100)
+  roundedPrice: string; // suggestedPrice rounded to the nearest whole euro (excl.)
+  roundedPriceIncl: string; // suggestedPriceIncl rounded to the nearest whole euro
+  finalPrice: string | null; // your final price, EXCL. VAT (derived from the mode)
+  finalPriceIncl: string | null; // your final price, INCL. VAT
+  margin: string | null; // finalPrice(excl) − totalCost
+  marginPercent: string | null; // margin as % of the final net (excl.) price
 }
 
 export async function computeProductBuildCost(
@@ -263,23 +276,48 @@ export async function computeProductBuildCost(
   const hours = Number.isFinite(params.hours) && params.hours > 0 ? params.hours : 0;
   const labourCost = money(toDecimal(pricing.hourlyRate).mul(hours));
 
-  // Totals + suggestion.
+  // VAT factor for the incl.-VAT figures (default 21%).
+  const vatRate =
+    params.vatRate != null &&
+    Number.isFinite(params.vatRate) &&
+    (params.vatRate as number) >= 0
+      ? (params.vatRate as number)
+      : 21;
+  const vatFactor = toDecimal(1).add(toDecimal(vatRate).div(100));
+
+  // Totals + suggestion (excl. VAT), plus the incl.-VAT mirror of each.
   const totalCost = money(machineCost.add(materialCost).add(labourCost));
   const suggested = money(
     totalCost.mul(toDecimal(1).add(toDecimal(pricing.markupPercent).div(100))),
   );
+  const suggestedIncl = money(suggested.mul(vatFactor));
+  // Round each side to whole euros independently: an excl. price rounds to a neat
+  // net number (B2B), an incl. price rounds to a neat shelf number (B2C).
   const rounded = suggested.toDecimalPlaces(0, Prisma.Decimal.ROUND_HALF_UP);
+  const roundedIncl = suggestedIncl.toDecimalPlaces(0, Prisma.Decimal.ROUND_HALF_UP);
 
-  // Your final price → margin over cost.
+  // Your final price → split into excl/incl per the chosen mode, then margin.
   const hasFinal =
     params.finalPrice != null &&
     Number.isFinite(params.finalPrice) &&
     (params.finalPrice as number) > 0;
-  const finalPrice = hasFinal ? money(params.finalPrice as number) : null;
-  const margin = finalPrice ? money(finalPrice.sub(totalCost)) : null;
+  let finalExcl: Prisma.Decimal | null = null;
+  let finalIncl: Prisma.Decimal | null = null;
+  if (hasFinal) {
+    const raw = money(params.finalPrice as number);
+    if (params.finalPriceInclVat === true) {
+      finalIncl = raw;
+      finalExcl = money(raw.div(vatFactor));
+    } else {
+      finalExcl = raw;
+      finalIncl = money(raw.mul(vatFactor));
+    }
+  }
+  // Margin is always on the net (excl.-VAT) amount — the VAT isn't your money.
+  const margin = finalExcl ? money(finalExcl.sub(totalCost)) : null;
   const marginPercent =
-    finalPrice && finalPrice.gt(0)
-      ? margin!.div(finalPrice).mul(100).toDecimalPlaces(1).toString()
+    finalExcl && finalExcl.gt(0)
+      ? margin!.div(finalExcl).mul(100).toDecimalPlaces(1).toString()
       : null;
 
   return {
@@ -293,10 +331,71 @@ export async function computeProductBuildCost(
     labourCost: labourCost.toFixed(2),
     totalCost: totalCost.toFixed(2),
     markupPercent: pricing.markupPercent,
+    vatRate,
     suggestedPrice: suggested.toFixed(2),
+    suggestedPriceIncl: suggestedIncl.toFixed(2),
     roundedPrice: rounded.toFixed(2),
-    finalPrice: finalPrice ? finalPrice.toFixed(2) : null,
+    roundedPriceIncl: roundedIncl.toFixed(2),
+    finalPrice: finalExcl ? finalExcl.toFixed(2) : null,
+    finalPriceIncl: finalIncl ? finalIncl.toFixed(2) : null,
     margin: margin ? margin.toFixed(2) : null,
     marginPercent,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Stored costing for a catalogue product (promoted from the calculator)
+// ---------------------------------------------------------------------------
+//
+// A product promoted from the cost calculator carries a ProductCosting row
+// (machine + minutes + labour hours) and a bill of materials (ProductMaterial).
+// This rebuilds the full production-cost breakdown from those stored inputs,
+// recomputed against *current* material/machine/labour rates — so the product
+// page always shows today's cost, not a frozen number. Returns null when the
+// product has neither a costing row nor any BOM lines.
+
+export interface StoredProductBuildCost extends ProductBuildCost {
+  /** The promotion snapshot (excl. VAT), if one was saved. */
+  snapshot: {
+    costAtPromotion: string | null;
+    priceAtPromotion: string | null;
+    markupPercent: string | null;
+    promotedAt: Date;
+  } | null;
+}
+
+export async function computeStoredProductBuildCost(
+  productId: string,
+  vatRate?: number | null,
+): Promise<StoredProductBuildCost | null> {
+  const [costing, bom] = await Promise.all([
+    prisma.productCosting.findUnique({ where: { productId } }),
+    prisma.productMaterial.findMany({
+      where: { productId },
+      select: { materialId: true, quantity: true },
+    }),
+  ]);
+
+  if (!costing && bom.length === 0) return null;
+
+  const build = await computeProductBuildCost({
+    machineId: costing?.machineId ?? null,
+    machineMinutes: costing?.machineMinutes ? Number(costing.machineMinutes) : 0,
+    lines: bom.map((b) => ({ materialId: b.materialId, quantity: b.quantity })),
+    hours: costing?.labourHours ? Number(costing.labourHours) : 0,
+    finalPrice: null,
+    vatRate: vatRate ?? undefined,
+  });
+
+  return {
+    ...build,
+    snapshot: costing
+      ? {
+          costAtPromotion: costing.costAtPromotion?.toFixed(2) ?? null,
+          priceAtPromotion: costing.priceAtPromotion?.toFixed(2) ?? null,
+          markupPercent: costing.markupPercent?.toString() ?? null,
+          promotedAt: costing.createdAt,
+        }
+      : null,
   };
 }

@@ -50,7 +50,11 @@ export default function NewProductPage() {
           </label>
           <label className="check-field form-col-2">
             <input type="checkbox" name="active" defaultChecked />
-            Actief (zichtbaar in de webshop)
+            Actief (staat in de catalogus)
+          </label>
+          <label className="check-field form-col-2">
+            <input type="checkbox" name="showOnWebshop" />
+            Tonen in de webshop
           </label>
           <div className="form-actions form-col-2">
             <button type="submit" className="btn-primary">

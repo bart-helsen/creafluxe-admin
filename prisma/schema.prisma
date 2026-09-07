@@ -86,6 +86,12 @@ model Product {
   basePrice   Decimal @db.Decimal(10, 2)
   vatRate     Decimal @default(21.00) @db.Decimal(5, 2) // Belgian standard 21%
   active      Boolean @default(true)
+  // Whether the product appears in the online shop. Kept separate from `active`
+  // on purpose: a product can live in the catalogue (active) yet be hidden from
+  // the webshop — e.g. one just promoted from the cost calculator that you're not
+  // ready to sell online. Defaults to false so promoted products stay hidden
+  // until you flip this on.
+  showOnWebshop Boolean @default(false)
   filter      String? // the "Filter" column — category/tag used by the webshop
   imagePath   String? // reference to product image(s)
   sortOrder   Int     @default(0)
@@ -97,8 +103,46 @@ model Product {
   designs      DesignAsset[]
   orderItems   OrderItem[]
   bomLines     ProductMaterial[] // bill of materials: what this product consumes
+  costing      ProductCosting?   // how this product's cost was calculated (1:1)
 
   @@index([active])
+  @@index([showOnWebshop])
+}
+
+// How a product's production cost was calculated when you promoted it from the
+// cost calculator. This is NOT a second catalogue: it's a 1:1 satellite of
+// Product, keyed by productId, holding only the costing inputs the catalogue
+// itself deliberately doesn't track. The material breakdown lives in the
+// existing bill of materials (ProductMaterial); this row adds the two things the
+// BOM can't express — the machine + its run time, and the labour hours — plus an
+// optional snapshot of the cost/price decision at promotion time.
+//
+// Because the inputs are stored (not just a frozen total), the full breakdown is
+// recomputed live against current material, machine and labour rates whenever you
+// view the product (see computeStoredProductBuildCost). The *AtPromotion fields
+// keep the original decision for reference even after those rates drift.
+model ProductCosting {
+  id        String  @id @default(cuid())
+  productId String  @unique
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  // Machine time (material lines live in ProductMaterial / the bill of materials).
+  machineId      String?
+  machine        Machine? @relation(fields: [machineId], references: [id], onDelete: SetNull)
+  machineMinutes Decimal? @db.Decimal(10, 2)
+
+  // Design + post-production labour (hours × the business hourly rate).
+  labourHours Decimal? @db.Decimal(10, 2)
+
+  // Snapshot of the calculation the day you promoted the product (all excl. VAT).
+  costAtPromotion  Decimal? @db.Decimal(10, 2) // total production cost then
+  priceAtPromotion Decimal? @db.Decimal(10, 2) // the sale price you chose then
+  markupPercent    Decimal? @db.Decimal(5, 2)  // markup used for the suggestion
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([machineId])
 }
 
 // Available choices per product: materials, sizes, styles, and named designs.
@@ -571,6 +615,8 @@ model Machine {
   notes     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  productCostings ProductCosting[] // products costed against this machine
 
   @@index([active])
 }

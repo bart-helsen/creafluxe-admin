@@ -92,6 +92,7 @@ export default async function ProductsPage({
                 <th>Opties</th>
                 <th>Stuklijst</th>
                 <th>Status</th>
+                <th>Webshop</th>
               </tr>
             </thead>
             <tbody>
@@ -115,6 +116,11 @@ export default async function ProductsPage({
                   <td>
                     <span className="status-pill">
                       {p.active ? "Actief" : "Inactief"}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="status-pill">
+                      {p.showOnWebshop ? "Zichtbaar" : "Verborgen"}
                     </span>
                   </td>
                 </tr>

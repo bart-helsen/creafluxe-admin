@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { formatEUR } from "@/lib/money";
 import { formatPerMinute } from "@/lib/machine-cost";
 import { computeProductBuildCost } from "@/server/materials/costing";
+import { promoteToCatalogueAction } from "@/lib/catalogue-actions";
 
 // Product cost calculator (docs: Machine model). Work out what a new product
 // costs to make — machine time + materials + design/post-production labour — and
@@ -30,6 +31,8 @@ export default async function ProductCostPage({
     quantity?: string | string[];
     hours?: string;
     finalPrice?: string;
+    finalPriceVat?: string; // "incl" | "excl"
+    vatRate?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -42,6 +45,8 @@ export default async function ProductCostPage({
   const finalPrice = sp.finalPrice != null && sp.finalPrice !== ""
     ? Number(sp.finalPrice)
     : null;
+  const finalPriceInclVat = sp.finalPriceVat === "incl";
+  const vatRate = Number(sp.vatRate ?? "") || 21;
 
   const [machines, materials] = await Promise.all([
     prisma.machine.findMany({
@@ -69,6 +74,8 @@ export default async function ProductCostPage({
         lines,
         hours,
         finalPrice,
+        finalPriceInclVat,
+        vatRate,
       })
     : null;
 
@@ -156,14 +163,36 @@ export default async function ProductCostPage({
 
               <h3>Eindprijs</h3>
               <label className="field calc-narrow">
-                Jouw eindprijs (excl. btw, optioneel)
+                Btw-tarief (%)
                 <input
-                  name="finalPrice"
+                  name="vatRate"
                   inputMode="decimal"
-                  placeholder="bv. 25.00"
-                  defaultValue={sp.finalPrice ?? ""}
+                  placeholder="21"
+                  defaultValue={sp.vatRate ?? "21"}
                 />
               </label>
+              <label className="field calc-narrow">
+                Jouw eindprijs (optioneel)
+                <div className="calc-row">
+                  <input
+                    name="finalPrice"
+                    inputMode="decimal"
+                    placeholder="bv. 25.00"
+                    defaultValue={sp.finalPrice ?? ""}
+                  />
+                  <select
+                    name="finalPriceVat"
+                    defaultValue={sp.finalPriceVat ?? "excl"}
+                  >
+                    <option value="excl">excl. btw</option>
+                    <option value="incl">incl. btw</option>
+                  </select>
+                </div>
+              </label>
+              <p className="muted small">
+                Kies <strong>excl. btw</strong> voor een ronde nettoprijs (B2B),
+                of <strong>incl. btw</strong> voor een ronde verkoopprijs (B2C).
+              </p>
 
               <div className="form-actions">
                 <button type="submit" className="btn-primary">
@@ -237,22 +266,38 @@ export default async function ProductCostPage({
                   </div>
                   <div className="totals-line">
                     <span>Richtprijs (+{result.markupPercent}% marge)</span>
-                    <span>{formatEUR(result.suggestedPrice)}</span>
+                    <span>
+                      {formatEUR(result.suggestedPrice)}
+                      <span className="muted small">
+                        {" "}
+                        · {formatEUR(result.suggestedPriceIncl)} incl. btw
+                      </span>
+                    </span>
                   </div>
                   <div className="totals-line">
                     <span>Afgerond</span>
-                    <span>{formatEUR(result.roundedPrice)}</span>
+                    <span>
+                      {formatEUR(result.roundedPrice)}
+                      <span className="muted small">
+                        {" "}
+                        · {formatEUR(result.roundedPriceIncl)} incl. btw
+                      </span>
+                    </span>
                   </div>
                 </div>
 
                 {result.finalPrice && (
                   <div className="totals-box" style={{ marginLeft: 0, maxWidth: "none" }}>
                     <div className="totals-line totals-line--strong">
-                      <span>Jouw eindprijs</span>
+                      <span>Jouw eindprijs (excl. btw)</span>
                       <span>{formatEUR(result.finalPrice)}</span>
                     </div>
                     <div className="totals-line">
-                      <span>Marge (op verkoopprijs)</span>
+                      <span>Incl. {result.vatRate}% btw</span>
+                      <span>{formatEUR(result.finalPriceIncl!)}</span>
+                    </div>
+                    <div className="totals-line">
+                      <span>Marge (op nettoprijs)</span>
                       <span
                         className={
                           Number(result.margin) < 0 ? "stock-low" : undefined
@@ -267,9 +312,86 @@ export default async function ProductCostPage({
                 )}
 
                 <p className="muted small">
-                  Alle bedragen excl. btw. Jij bepaalt de eindprijs. Promoveren
-                  naar de catalogus komt in een volgende stap.
+                  Kostprijs en marge zijn excl. btw. Je koos je eindprijs{" "}
+                  {finalPriceInclVat ? "incl." : "excl."} btw; beide bedragen
+                  staan hierboven.
                 </p>
+
+                {/* Promote to the catalogue. Carries the current inputs so the
+                    server action can recompute and store them. */}
+                <div className="promote-box" style={{ marginTop: "1rem" }}>
+                  <h3>Naar catalogus</h3>
+                  {name ? (
+                    <form
+                      action={promoteToCatalogueAction}
+                      className="stack-form"
+                    >
+                      <input type="hidden" name="name" value={name} />
+                      <input
+                        type="hidden"
+                        name="machineId"
+                        value={machineId}
+                      />
+                      <input
+                        type="hidden"
+                        name="machineMinutes"
+                        value={sp.machineMinutes ?? ""}
+                      />
+                      <input type="hidden" name="hours" value={hours || ""} />
+                      <input
+                        type="hidden"
+                        name="finalPrice"
+                        value={sp.finalPrice ?? ""}
+                      />
+                      <input
+                        type="hidden"
+                        name="finalPriceVat"
+                        value={sp.finalPriceVat ?? "excl"}
+                      />
+                      <input
+                        type="hidden"
+                        name="vatRate"
+                        value={sp.vatRate ?? "21"}
+                      />
+                      {lines.flatMap((l, i) => [
+                        <input
+                          key={`m${i}`}
+                          type="hidden"
+                          name="materialId"
+                          value={l.materialId}
+                        />,
+                        <input
+                          key={`q${i}`}
+                          type="hidden"
+                          name="quantity"
+                          value={l.quantity}
+                        />,
+                      ])}
+                      <label className="field">
+                        SKU voor de catalogus *
+                        <input name="sku" placeholder="bv. HEUP-LEER" required />
+                      </label>
+                      <button type="submit" className="btn-primary">
+                        Promoveer naar catalogus
+                      </button>
+                      <p className="muted small">
+                        Maakt een catalogusproduct aan — verborgen in de webshop
+                        tot je dat zelf aanzet — met de stuklijst en
+                        kostberekening eraan gekoppeld. De basisprijs (incl.{" "}
+                        {result.vatRate}% btw) volgt uit je eindprijs
+                        {finalPriceInclVat
+                          ? " (die je al incl. btw koos)"
+                          : ", omgerekend van excl. naar incl. btw"}
+                        ; achteraf aanpasbaar.
+                      </p>
+                    </form>
+                  ) : (
+                    <p className="muted small">
+                      Geef bovenaan een productnaam in om dit resultaat naar de
+                      catalogus te kunnen promoveren.
+                    </p>
+                  )}
+                </div>
               </>
             )}
           </section>
