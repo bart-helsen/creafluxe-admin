@@ -797,6 +797,27 @@ a.btn-primary {
   text-decoration: underline;
 }
 
+.btn-link {
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.btn-link:hover {
+  text-decoration: underline;
+}
+
+/* Derived, non-editable value shown inside a form (e.g. unit cost that is
+   synced from the preferred supplier's price). */
+.readonly-value {
+  margin: 0;
+  font-weight: 600;
+}
+
 /* Stacked master files list */
 .files--stacked {
   flex-direction: column;

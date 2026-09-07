@@ -2,6 +2,7 @@ import { Prisma, type StockMovementType } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { toDecimal } from "@/lib/money";
 import { notifyLowStock } from "@/server/notifications/notifyLowStock";
+import { syncMaterialCostFromPreferred } from "@/server/materials/cost-sync";
 
 // Stock is an append-only ledger (docs/11). Every change is a StockMovement with
 // a SIGNED quantity; Material.stockQuantity is the cached running total, updated
@@ -74,13 +75,47 @@ export async function recordStockMovement(
       where: { id: input.materialId },
       data: {
         stockQuantity: newQty,
-        // A purchase refreshes the working unit cost used for costing.
-        ...(input.type === "PURCHASE" && input.unitCost != null
-          ? { unitCost: toDecimal(input.unitCost) }
-          : {}),
+        // Unit cost is NOT touched here: it is derived from the preferred
+        // supplier's price. A purchase feeds that supplier's price history
+        // below instead of overwriting the working cost directly.
       },
       select: { stockQuantity: true, reorderLevel: true, active: true },
     });
+
+    // A purchase keeps the supplier's price record current. If we know which
+    // supplier and at what price, record it as this supplier's latest purchase
+    // (creating the supplier link if it did not exist yet), then re-derive the
+    // material's unit cost from whichever supplier is the Voorkeur. This way the
+    // price still lives in exactly one place — on the supplier — and the cost
+    // only moves when you buy from (or newly price) the preferred supplier.
+    if (
+      input.type === "PURCHASE" &&
+      input.unitCost != null &&
+      input.supplierId
+    ) {
+      const price = toDecimal(input.unitCost);
+      await tx.supplierMaterial.upsert({
+        where: {
+          supplierId_materialId: {
+            supplierId: input.supplierId,
+            materialId: input.materialId,
+          },
+        },
+        // Existing supplier: keep the reference unitPrice you set, just log the
+        // latest purchase price and date.
+        update: { lastPurchasePrice: price, lastPurchaseDate: new Date() },
+        // First time buying this material from this supplier: seed the price
+        // record from what you paid.
+        create: {
+          supplierId: input.supplierId,
+          materialId: input.materialId,
+          unitPrice: price,
+          lastPurchasePrice: price,
+          lastPurchaseDate: new Date(),
+        },
+      });
+      await syncMaterialCostFromPreferred(tx, input.materialId);
+    }
 
     const wasAbove = toDecimal(material.stockQuantity).gt(material.reorderLevel);
     const nowBelow = toDecimal(updated.stockQuantity).lte(updated.reorderLevel);

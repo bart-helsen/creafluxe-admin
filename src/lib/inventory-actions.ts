@@ -7,6 +7,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { toDecimal } from "@/lib/money";
 import { recordStockMovement } from "@/server/materials/stock";
+import { syncMaterialCostFromPreferred } from "@/server/materials/cost-sync";
 
 // Server actions behind the Phase 2b inventory screens (materials, suppliers,
 // prices, stock movements, bill of materials). Each re-checks the session and
@@ -113,16 +114,14 @@ export async function createMaterialAction(formData: FormData): Promise<void> {
   if (!sku || !name) throw new Error("SKU en naam zijn verplicht.");
 
   // Optional reorder source: an existing supplier (picked) or a new one (named),
-  // with its price and a link to this material's product page. When given it
-  // becomes the material's preferred supplier and working unit cost, so the
-  // order form can reuse it later instead of asking again.
+  // with its price and a link to this material's product page. The price you
+  // give here is the material's price AT THAT SUPPLIER — there is no separate
+  // material unit cost to keep in sync. The supplier is flagged Voorkeur, and
+  // its price becomes the working unit cost (see syncMaterialCostFromPreferred).
   const existingSupplierId = optStr(formData, "supplierId");
   const newSupplierName = optStr(formData, "newSupplierName");
   const supplierPrice = optDec(formData, "supplierPrice");
   const productUrl = optStr(formData, "productUrl");
-  const baseUnitCost = toDecimal(str(formData, "unitCost") || "0");
-  // A supplier price, when supplied, wins over the plain unit-cost field.
-  const workingCost = supplierPrice ?? baseUnitCost;
 
   const material = await prisma.$transaction(async (tx) => {
     const created = await tx.material.create({
@@ -134,7 +133,9 @@ export async function createMaterialAction(formData: FormData): Promise<void> {
         unit: str(formData, "unit") || "stuk",
         reorderLevel: toDecimal(str(formData, "reorderLevel") || "0"),
         reorderQuantity: optDec(formData, "reorderQuantity"),
-        unitCost: workingCost,
+        // unitCost is derived from the preferred supplier's price below; it stays
+        // 0 until a supplier price exists.
+        unitCost: toDecimal(0),
         notes: optStr(formData, "notes"),
         // stockQuantity stays 0; use a stock movement (or an opening ADJUSTMENT).
       },
@@ -152,15 +153,13 @@ export async function createMaterialAction(formData: FormData): Promise<void> {
         data: {
           materialId: created.id,
           supplierId,
-          unitPrice: supplierPrice ?? workingCost,
+          unitPrice: supplierPrice ?? toDecimal(0),
           productUrl,
           isPreferred: true,
         },
       });
-      await tx.material.update({
-        where: { id: created.id },
-        data: { currentSupplierId: supplierId, unitCost: supplierPrice ?? workingCost },
-      });
+      // Mirror the preferred supplier's price onto the material's unit cost.
+      await syncMaterialCostFromPreferred(tx, created.id);
     }
     return created;
   });
@@ -185,7 +184,8 @@ export async function updateMaterialAction(formData: FormData): Promise<void> {
       unit: str(formData, "unit") || "stuk",
       reorderLevel: toDecimal(str(formData, "reorderLevel") || "0"),
       reorderQuantity: optDec(formData, "reorderQuantity"),
-      unitCost: toDecimal(str(formData, "unitCost") || "0"),
+      // unitCost is intentionally NOT set here: it is derived from the preferred
+      // supplier's price. Manage the price on the supplier rows below instead.
       notes: optStr(formData, "notes"),
       active: formData.get("active") != null,
     },
@@ -241,7 +241,7 @@ export async function upsertSupplierPriceAction(
 
   await prisma.$transaction(async (tx) => {
     if (isPreferred) {
-      // Only one preferred supplier per material; mirror it to currentSupplier.
+      // Only one preferred supplier per material.
       await tx.supplierMaterial.updateMany({
         where: { materialId },
         data: { isPreferred: false },
@@ -276,13 +276,34 @@ export async function upsertSupplierPriceAction(
         isPreferred,
       },
     });
-    if (isPreferred) {
-      // Sync the material's current supplier and working unit cost.
-      await tx.material.update({
-        where: { id: materialId },
-        data: { currentSupplierId: supplierId, unitCost: toDecimal(unitPrice) },
-      });
-    }
+    // Re-derive the material's unit cost from whichever supplier is preferred.
+    await syncMaterialCostFromPreferred(tx, materialId);
+  });
+
+  revalidatePath(`/materials/${materialId}`);
+}
+
+// Mark one existing supplier price as the material's Voorkeur (preferred). The
+// preferred supplier's price is the working unit cost, so switching it here is
+// the one place that changes what a product costs.
+export async function setPreferredSupplierAction(
+  formData: FormData,
+): Promise<void> {
+  await requireUserId();
+  const materialId = str(formData, "materialId");
+  const supplierId = str(formData, "supplierId");
+  if (!materialId || !supplierId) throw new Error("Kies een leverancier.");
+
+  await prisma.$transaction(async (tx) => {
+    await tx.supplierMaterial.updateMany({
+      where: { materialId },
+      data: { isPreferred: false },
+    });
+    await tx.supplierMaterial.update({
+      where: { supplierId_materialId: { supplierId, materialId } },
+      data: { isPreferred: true },
+    });
+    await syncMaterialCostFromPreferred(tx, materialId);
   });
 
   revalidatePath(`/materials/${materialId}`);
@@ -294,7 +315,12 @@ export async function deleteSupplierPriceAction(
   await requireUserId();
   const id = str(formData, "id");
   const materialId = str(formData, "materialId");
-  await prisma.supplierMaterial.delete({ where: { id } });
+  await prisma.$transaction(async (tx) => {
+    await tx.supplierMaterial.delete({ where: { id } });
+    // If the deleted row was the Voorkeur, another is elected (or the cost
+    // falls back to 0 when no supplier price remains).
+    await syncMaterialCostFromPreferred(tx, materialId);
+  });
   revalidatePath(`/materials/${materialId}`);
 }
 

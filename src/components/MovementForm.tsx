@@ -83,7 +83,7 @@ export default function MovementForm({
         </select>
       </label>
       <label className="field">
-        Eenheidskost (bij aankoop)
+        Aankoopprijs (bij aankoop)
         <input
           name="unitCost"
           inputMode="decimal"

@@ -11,6 +11,7 @@ import {
   updateMaterialAction,
   upsertSupplierPriceAction,
   deleteSupplierPriceAction,
+  setPreferredSupplierAction,
 } from "@/lib/inventory-actions";
 import MovementForm from "@/components/MovementForm";
 
@@ -132,7 +133,8 @@ export default async function MaterialDetailPage({
             <h2>Voorraadbeweging boeken</h2>
             <p className="small muted">
               Elke aankoop, verbruik of correctie. Het teken volgt automatisch uit
-              het type; een aankoop werkt ook je eenheidskost bij.
+              het type; een aankoop noteert de aankoopprijs bij de gekozen
+              leverancier.
             </p>
             <MovementForm
               materialId={material.id}
@@ -202,6 +204,11 @@ export default async function MaterialDetailPage({
           {/* Supplier prices */}
           <section className="panel">
             <h2>Leveranciers &amp; prijzen</h2>
+            <p className="small muted">
+              De prijs van dit materiaal geef je hier op — één keer per
+              leverancier. De leverancier met <strong>Voorkeur</strong> bepaalt de
+              eenheidskost waarmee kostprijzen gerekend worden.
+            </p>
             {material.supplierMaterials.length === 0 ? (
               <p className="muted small">Nog geen leveranciersprijzen.</p>
             ) : (
@@ -255,7 +262,21 @@ export default async function MaterialDetailPage({
                           {sm.isPreferred ? (
                             <span className="status-pill">Voorkeur</span>
                           ) : (
-                            "—"
+                            <form action={setPreferredSupplierAction}>
+                              <input
+                                type="hidden"
+                                name="materialId"
+                                value={material.id}
+                              />
+                              <input
+                                type="hidden"
+                                name="supplierId"
+                                value={sm.supplierId}
+                              />
+                              <button className="btn-link" type="submit">
+                                Als voorkeur
+                              </button>
+                            </form>
                           )}
                         </td>
                         <td className="row-action">
@@ -312,8 +333,8 @@ export default async function MaterialDetailPage({
                 </label>
                 <label className="check-field form-col-2">
                   <input type="checkbox" name="isPreferred" />
-                  Voorkeursleverancier (wordt de huidige leverancier +
-                  eenheidskost)
+                  Voorkeursleverancier — deze prijs wordt de eenheidskost voor de
+                  kostprijsberekening
                 </label>
                 <div className="form-actions form-col-2">
                   <button type="submit" className="btn-ghost btn-ghost--dark">
@@ -386,14 +407,22 @@ export default async function MaterialDetailPage({
                 Eenheid
                 <input name="unit" defaultValue={material.unit} />
               </label>
-              <label className="field">
+              <div className="field">
                 Eenheidskost (excl. btw)
-                <input
-                  name="unitCost"
-                  inputMode="decimal"
-                  defaultValue={material.unitCost.toString()}
-                />
-              </label>
+                <p className="readonly-value">
+                  {formatEUR(material.unitCost.toString())}/{material.unit}
+                  <span className="muted small">
+                    {" "}
+                    {preferred
+                      ? `— van voorkeursleverancier ${preferred.supplier.name}`
+                      : "— nog geen voorkeursleverancier; voeg hieronder een prijs toe"}
+                  </span>
+                </p>
+                <p className="muted small" style={{ margin: 0 }}>
+                  Wordt automatisch overgenomen van de voorkeursleverancier — pas
+                  de prijs aan bij <strong>Leveranciers &amp; prijzen</strong>.
+                </p>
+              </div>
               <label className="field">
                 Minimumvoorraad
                 <input

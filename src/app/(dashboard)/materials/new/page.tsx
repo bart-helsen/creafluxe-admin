@@ -58,10 +58,6 @@ export default async function NewMaterialPage() {
             <input name="unit" defaultValue="stuk" placeholder="plaat, m2, kg…" />
           </label>
           <label className="field">
-            Eenheidskost (excl. btw)
-            <input name="unitCost" inputMode="decimal" defaultValue="0.00" />
-          </label>
-          <label className="field">
             Minimumvoorraad
             <input name="reorderLevel" inputMode="decimal" defaultValue="0" />
           </label>
@@ -80,9 +76,11 @@ export default async function NewMaterialPage() {
 
           {/* Reorder source — becomes the material's preferred supplier + price. */}
           <p className="muted small form-col-2" style={{ margin: "0.25rem 0 0" }}>
-            <strong>Bestellen bij</strong> (optioneel) — leverancier, prijs en
-            productlink. Deze prijs wordt de eenheidskost en vult je aankopen
-            straks automatisch aan.
+            <strong>Prijs &amp; leverancier</strong> (optioneel) — geef de prijs
+            één keer op, bij de leverancier. Deze leverancier wordt de{" "}
+            <strong>voorkeur</strong> en zijn prijs is meteen de eenheidskost
+            waarmee kostprijzen gerekend worden. Meer leveranciers voeg je nadien
+            toe op de materiaalpagina.
           </p>
           <label className="field">
             Leverancier

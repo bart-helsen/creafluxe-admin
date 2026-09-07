@@ -15,6 +15,7 @@
     "create-admin": "tsx scripts/create-admin.ts",
     "import-products": "tsx scripts/import-products.ts",
     "import-materials": "tsx scripts/import-materials.ts",
+    "sync-material-costs": "tsx scripts/sync-material-costs.ts",
     "seed-demo": "tsx scripts/seed-demo.ts",
     "test": "vitest run"
   },
