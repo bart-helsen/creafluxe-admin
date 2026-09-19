@@ -17,6 +17,7 @@ export interface MaterialSampleView {
   machineId: string | null;
   machineName: string | null;
   caption: string | null;
+  active: boolean;
   fileName: string;
   storageKey: string;
   imageUrl: string | null; // null when R2 isn't configured
@@ -51,6 +52,7 @@ export async function gatherMaterialSamples(
       machineId: s.machineId,
       machineName: s.machine?.name ?? null,
       caption: s.caption,
+      active: s.active,
       fileName: s.fileName,
       storageKey: s.storageKey,
       imageUrl: r2On ? await presignDownload(s.storageKey) : null,
