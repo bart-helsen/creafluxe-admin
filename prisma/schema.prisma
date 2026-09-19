@@ -485,6 +485,7 @@ model Material {
   supplierMaterials SupplierMaterial[]
   stockMovements    StockMovement[]
   bomLines          ProductMaterial[]
+  samples           MaterialSample[] // showcase photos: raw + per-operation, per-machine
 
   @@index([category])
   @@index([active])
@@ -617,8 +618,61 @@ model Machine {
   updatedAt DateTime @updatedAt
 
   productCostings ProductCosting[] // products costed against this machine
+  materialSamples MaterialSample[] // showcase photos shot on this machine
 
   @@index([active])
+}
+
+// ===========================================================================
+// MATERIAL SAMPLES — client-facing showcase photos.
+//   The question this answers: "what does <operation> look like on <material>,
+//   done on <machine>?" That is a material × operation × machine combination,
+//   so it is modelled as its own rows — NOT as columns on Material (which would
+//   need a schema change per machine/operation and be mostly null).
+//
+//   One row = one photo. Conventions mirror DesignAsset exactly: the image
+//   lives in R2, only the storageKey + metadata are stored here, and the app
+//   builds short-lived presigned URLs on demand (see gatherMaterialSamples).
+//
+//   A RAW sample has operation = RAW and machineId = null (the plain swatch,
+//   no machine involved). Every other operation should carry the machine it was
+//   produced on, so two machines' engravings of the same material are two rows.
+// ===========================================================================
+
+model MaterialSample {
+  id         String    @id @default(cuid())
+  materialId String
+  material   Material  @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  operation  Operation
+  // null for RAW (no machine); set for every produced operation.
+  machineId  String?
+  machine    Machine?  @relation(fields: [machineId], references: [id], onDelete: SetNull)
+
+  // Image in R2; the app presigns a download URL on demand (like DesignAsset).
+  storageKey String  @unique
+  fileName   String
+  mimeType   String
+  sizeBytes  Int?
+
+  caption   String? // optional note shown to clients, e.g. "1000 mm/s, 40% power"
+  sortOrder Int     @default(0)
+  active    Boolean @default(true) // hide a sample without deleting it
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([materialId, operation])
+  @@index([machineId])
+}
+
+// What was done to the material. RAW = the untouched swatch. Add values here as
+// you offer more operations — no other table changes.
+enum Operation {
+  RAW
+  CUT
+  ENGRAVE
+  SCORE
 }
 
 // ===========================================================================

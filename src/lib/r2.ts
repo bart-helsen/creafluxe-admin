@@ -60,6 +60,15 @@ export const ALLOWED_UPLOAD_MIME = new Set([
 
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
 
+/** Showcase sample photos are images only (no vector/CAD formats). */
+export const ALLOWED_SAMPLE_MIME = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+
+export const MAX_SAMPLE_BYTES = 10 * 1024 * 1024; // 10 MB
+
 /** Build a collision-proof storage key for a customer upload. */
 export function buildCustomKey(fileName: string): string {
   const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
@@ -70,6 +79,12 @@ export function buildCustomKey(fileName: string): string {
 export function buildMasterKey(fileName: string): string {
   const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
   return `master/${Date.now()}-${randomBytes(6).toString("hex")}-${safe}`;
+}
+
+/** Build a collision-proof storage key for a material showcase sample photo. */
+export function buildSampleKey(fileName: string): string {
+  const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
+  return `samples/${Date.now()}-${randomBytes(6).toString("hex")}-${safe}`;
 }
 
 /** A short-lived URL the browser/site can PUT a file to. */

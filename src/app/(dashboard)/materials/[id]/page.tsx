@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import {
   Prisma,
   type MaterialCategory,
+  type Operation,
   type StockMovementType,
 } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -13,7 +14,21 @@ import {
   deleteSupplierPriceAction,
   setPreferredSupplierAction,
 } from "@/lib/inventory-actions";
+import {
+  uploadMaterialSampleAction,
+  deleteMaterialSampleAction,
+} from "@/lib/material-sample-actions";
+import { gatherMaterialSamples } from "@/server/materials/gatherMaterialSamples";
 import MovementForm from "@/components/MovementForm";
+
+const OPERATION_LABELS: Record<Operation, string> = {
+  RAW: "Onbewerkt",
+  CUT: "Gesneden",
+  ENGRAVE: "Gegraveerd",
+  SCORE: "Gescoord",
+};
+
+const OPERATION_OPTIONS: Operation[] = ["RAW", "ENGRAVE", "SCORE", "CUT"];
 
 const CATEGORY_LABELS: Record<MaterialCategory, string> = {
   WOOD: "Hout",
@@ -62,6 +77,17 @@ export default async function MaterialDetailPage({
     where: { active: true },
     orderBy: { name: "asc" },
     select: { id: true, name: true },
+  });
+
+  const machines = await prisma.machine.findMany({
+    where: { active: true },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
+
+  // includeInactive so the admin sees hidden samples too (with an "verborgen" tag).
+  const sampleGroups = await gatherMaterialSamples(material.id, {
+    includeInactive: true,
   });
 
   const low = new Prisma.Decimal(material.stockQuantity).lte(
@@ -128,6 +154,146 @@ export default async function MaterialDetailPage({
 
       <div className="detail-grid">
         <div className="detail-main">
+          {/* Showcase samples: what each operation looks like on this material */}
+          <section className="panel">
+            <h2>Stalen &amp; bewerkingen</h2>
+            <p className="small muted">
+              Toon klanten hoe dit materiaal eruitziet — onbewerkt en per
+              bewerking, per machine. Elke foto is één staal; upload er meerdere
+              per bewerking als je verschillende machines of instellingen wil
+              tonen.
+            </p>
+
+            {sampleGroups.length === 0 ? (
+              <p className="muted small">Nog geen stalen geüpload.</p>
+            ) : (
+              sampleGroups.map((group) => (
+                <div key={group.operation} style={{ marginBottom: "1.25rem" }}>
+                  <h3 style={{ margin: "0 0 0.5rem" }}>
+                    {OPERATION_LABELS[group.operation]}
+                  </h3>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "repeat(auto-fill, minmax(160px, 1fr))",
+                      gap: "0.75rem",
+                    }}
+                  >
+                    {group.samples.map((s) => (
+                      <figure
+                        key={s.id}
+                        className="panel"
+                        style={{
+                          margin: 0,
+                          padding: "0.5rem",
+                          opacity: s.active ? 1 : 0.55,
+                        }}
+                      >
+                        {s.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={s.imageUrl}
+                            alt={`${OPERATION_LABELS[group.operation]} — ${material.name}`}
+                            style={{
+                              width: "100%",
+                              aspectRatio: "4 / 3",
+                              objectFit: "cover",
+                              borderRadius: "6px",
+                              display: "block",
+                            }}
+                          />
+                        ) : (
+                          <div className="muted small">
+                            (R2 niet geconfigureerd — geen voorbeeld)
+                          </div>
+                        )}
+                        <figcaption className="small" style={{ marginTop: "0.4rem" }}>
+                          {s.machineName && (
+                            <span className="status-pill">{s.machineName}</span>
+                          )}
+                          {!s.active && (
+                            <span className="stock-flag">verborgen</span>
+                          )}
+                          {s.caption && (
+                            <span className="muted"> {s.caption}</span>
+                          )}
+                        </figcaption>
+                        <form
+                          action={deleteMaterialSampleAction}
+                          style={{ marginTop: "0.3rem" }}
+                        >
+                          <input type="hidden" name="id" value={s.id} />
+                          <input
+                            type="hidden"
+                            name="materialId"
+                            value={material.id}
+                          />
+                          <button className="btn-link-danger" type="submit">
+                            Verwijderen
+                          </button>
+                        </form>
+                      </figure>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+
+            {/* Upload a new sample */}
+            <form action={uploadMaterialSampleAction} className="form-grid">
+              <input type="hidden" name="materialId" value={material.id} />
+              <label className="field">
+                Bewerking
+                <select name="operation" defaultValue="RAW" required>
+                  {OPERATION_OPTIONS.map((op) => (
+                    <option key={op} value={op}>
+                      {OPERATION_LABELS[op]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                Machine <span className="muted small">(niet voor onbewerkt)</span>
+                <select name="machineId" defaultValue="">
+                  <option value="">Kies machine…</option>
+                  {machines.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                Foto (JPG, PNG of WebP)
+                <input
+                  name="file"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  required
+                />
+              </label>
+              <label className="field">
+                Bijschrift (optioneel)
+                <input name="caption" placeholder="bv. 1000 mm/s, 40% vermogen" />
+              </label>
+              <div className="form-actions form-col-2">
+                <button type="submit" className="btn-ghost btn-ghost--dark">
+                  Staal uploaden
+                </button>
+              </div>
+            </form>
+            {machines.length === 0 && (
+              <p className="muted small">
+                Tip: maak eerst een{" "}
+                <Link href="/machines/new" className="link-strong">
+                  machine
+                </Link>{" "}
+                aan om bewerkte stalen aan een machine te koppelen.
+              </p>
+            )}
+          </section>
+
           {/* Record a movement */}
           <section className="panel">
             <h2>Voorraadbeweging boeken</h2>
