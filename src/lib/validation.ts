@@ -203,3 +203,16 @@ export const manualOrderSchema = z
 
 export type ManualOrderInput = z.infer<typeof manualOrderSchema>;
 export type ManualOrderItemInput = z.infer<typeof manualOrderItemSchema>;
+
+// ---------------------------------------------------------------------------
+// Edit an existing order's lines ("Bestelling bewerken" on the order page).
+// Lines with an id update that OrderItem; lines without one are added; items
+// missing from the list are removed.
+// ---------------------------------------------------------------------------
+
+export const orderItemsUpdateSchema = z.object({
+  items: z.array(manualOrderItemSchema.extend({ id: optionalText })),
+  note: optionalText,
+});
+
+export type OrderItemsUpdateInput = z.infer<typeof orderItemsUpdateSchema>;

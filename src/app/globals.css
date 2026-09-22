@@ -1057,6 +1057,23 @@ button.tab {
 .order-line {
   position: relative;
   margin-top: 12px;
+  /* Lay the line out by its own width: the editor sits in a wide column on
+     "Nieuwe bestelling" but in a narrower one on the order page. */
+  container-type: inline-size;
+}
+
+@container (max-width: 640px) {
+  .order-line .order-line-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .order-line .order-line-product,
+  .order-line .order-line-name,
+  .order-line .order-line-remarks {
+    grid-column: 1 / -1;
+  }
+  .order-line .order-line-total {
+    align-items: flex-start;
+  }
 }
 
 .order-line-grid {
@@ -1120,6 +1137,24 @@ button.tab {
 
 .totals-box--full {
   max-width: none;
+}
+
+.form-success {
+  margin: 0 0 8px;
+  color: #067647;
+  font-size: 13px;
+}
+
+.edit-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.order-line-hint {
+  margin: 6px 0 0;
 }
 
 @media (max-width: 900px) {

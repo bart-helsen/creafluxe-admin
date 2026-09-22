@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { manualOrderSchema } from "@/lib/validation";
+import { manualOrderSchema, orderItemsUpdateSchema } from "@/lib/validation";
+import { formatEUR } from "@/lib/money";
+import { updateOrderItems } from "@/server/orders/updateOrderItems";
 import {
   createManualOrder,
   ManualOrderError,
@@ -52,4 +54,57 @@ export async function createManualOrderAction(
   revalidatePath("/");
   // Outside the try/catch: redirect() works by throwing.
   redirect(`/orders/${orderId}`);
+}
+
+// ---------------------------------------------------------------------------
+// "Bestelling bewerken" on the order page: replace the order's lines (prices,
+// quantities, options, add/remove) and rebuild the draft invoice.
+// ---------------------------------------------------------------------------
+
+export interface OrderEditFormState {
+  error?: string;
+  success?: string;
+}
+
+export async function updateOrderItemsAction(
+  _prev: OrderEditFormState | undefined,
+  formData: FormData,
+): Promise<OrderEditFormState> {
+  const session = await auth();
+  if (!session?.user?.id) return { error: "Je bent niet (meer) aangemeld." };
+
+  const orderId = String(formData.get("orderId") ?? "");
+  let raw: unknown;
+  try {
+    raw = JSON.parse(String(formData.get("payload") ?? ""));
+  } catch {
+    return { error: "Het formulier kon niet gelezen worden. Probeer opnieuw." };
+  }
+
+  const parsed = orderItemsUpdateSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Controleer de ingevulde gegevens." };
+  }
+
+  try {
+    const { oldTotal, newTotal } = await updateOrderItems({
+      orderId,
+      input: parsed.data,
+      userId: session.user.id,
+    });
+    revalidatePath(`/orders/${orderId}`);
+    revalidatePath("/orders");
+    revalidatePath("/invoices");
+    revalidatePath("/");
+    return {
+      success:
+        oldTotal === newTotal
+          ? "Bestelling bijgewerkt."
+          : `Bestelling bijgewerkt: ${formatEUR(oldTotal)} → ${formatEUR(newTotal)}. De conceptfactuur is mee aangepast.`,
+    };
+  } catch (err) {
+    if (err instanceof ManualOrderError) return { error: err.message };
+    console.error("[order-edit] failed:", err);
+    return { error: "De wijzigingen konden niet opgeslagen worden." };
+  }
 }

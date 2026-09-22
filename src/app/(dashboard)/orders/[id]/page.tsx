@@ -12,6 +12,8 @@ import {
   regenerateInvoiceAction,
 } from "@/lib/dashboard-actions";
 import { channelLabel } from "@/lib/manual-order";
+import OrderEditPanel from "@/components/OrderEditPanel";
+import type { Line, PickerProduct } from "@/components/OrderLinesEditor";
 
 export default async function OrderDetailPage({
   params,
@@ -24,7 +26,10 @@ export default async function OrderDetailPage({
     where: { id },
     include: {
       customer: true,
-      items: { orderBy: { createdAt: "asc" } },
+      items: {
+        orderBy: { createdAt: "asc" },
+        include: { _count: { select: { customDesigns: true } } },
+      },
       invoice: true,
       statusEvents: {
         orderBy: { createdAt: "desc" },
@@ -35,6 +40,54 @@ export default async function OrderDetailPage({
   if (!order) notFound();
 
   const designs = await gatherOrderDesigns(order.id);
+
+  // Catalogue for the "Bestelling bewerken" panel: active products plus any
+  // (possibly inactive) product this order already uses.
+  const usedProductIds = order.items
+    .map((it) => it.productId)
+    .filter((id): id is string => !!id);
+  const catalogue = await prisma.product.findMany({
+    where: { OR: [{ active: true }, { id: { in: usedProductIds } }] },
+    include: {
+      options: {
+        where: { active: true },
+        orderBy: [{ sortOrder: "asc" }, { value: "asc" }],
+      },
+    },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+  });
+  const pickerProducts: PickerProduct[] = catalogue.map((p) => ({
+    id: p.id,
+    sku: p.sku,
+    name: p.name,
+    basePrice: p.basePrice.toFixed(2),
+    vatRate: p.vatRate.toFixed(0),
+    active: p.active,
+    options: p.options.map((o) => ({
+      type: o.type,
+      value: o.value,
+      priceDelta: o.priceDelta.toFixed(2),
+    })),
+  }));
+  const editLines: Line[] = order.items.map((it, i) => ({
+    key: i + 1,
+    id: it.id,
+    fileCount: it._count.customDesigns,
+    productId: it.productId ?? "",
+    name: it.nameSnapshot,
+    unitPrice: it.unitPrice.toFixed(2).replace(".", ","),
+    quantity: String(it.quantity),
+    vatRate: it.vatRate.toFixed(0),
+    material: it.material ?? "",
+    size: it.size ?? "",
+    style: it.style ?? "",
+    design: it.design ?? "",
+    remarks: it.remarks ?? "",
+  }));
+  const editLockedReason =
+    order.invoice && order.invoice.status !== "DRAFT"
+      ? `De factuur ${order.invoice.invoiceNumber ?? ""} is al uitgereikt, dus deze bestelling kan niet meer aangepast worden. Maak een creditnota of een aparte bestelling voor het verschil.`
+      : null;
   const designByItem = new Map(designs.map((d) => [d.orderItemId, d.files]));
 
   const delivery = order.deliveryRequested
@@ -136,6 +189,14 @@ export default async function OrderDetailPage({
             </div>
           </section>
 
+          <OrderEditPanel
+            orderId={order.id}
+            initialLines={editLines}
+            currentTotal={order.total.toFixed(2)}
+            products={pickerProducts}
+            lockedReason={editLockedReason}
+          />
+
           {/* Status timeline */}
           <section className="panel">
             <h2>Statusgeschiedenis</h2>
@@ -144,8 +205,12 @@ export default async function OrderDetailPage({
                 <li key={e.id}>
                   <div className="timeline-dot" />
                   <div>
-                    <strong>{STATUS_LABELS[e.toStatus]}</strong>
-                    {e.fromStatus && (
+                    <strong>
+                      {e.fromStatus === e.toStatus
+                        ? "Bestelling aangepast"
+                        : STATUS_LABELS[e.toStatus]}
+                    </strong>
+                    {e.fromStatus && e.fromStatus !== e.toStatus && (
                       <span className="muted small">
                         {" "}
                         ← {STATUS_LABELS[e.fromStatus]}

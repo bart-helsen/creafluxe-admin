@@ -7,22 +7,22 @@ import {
   type ManualOrderFormState,
 } from "@/lib/order-actions";
 import { MANUAL_ORDER_CHANNELS, type ManualOrderChannel } from "@/lib/manual-order";
+import OrderLinesEditor, {
+  emptyLine,
+  formatCents,
+  lineCents,
+  linesToPayload,
+  usedLines,
+  type Line,
+  type PickerProduct,
+} from "@/components/OrderLinesEditor";
 
 // The "Nieuwe bestelling" form. A client component because the order lines are
 // dynamic (add / remove, product → price auto-fill) and the customer is picked
 // from a live search. On submit the whole state is sent as one JSON field to
 // createManualOrderAction, which validates it server-side.
 
-type OptionType = "MATERIAL" | "SIZE" | "STYLE" | "DESIGN";
-
-export interface PickerProduct {
-  id: string;
-  sku: string;
-  name: string;
-  basePrice: string; // "12.00", incl. VAT
-  vatRate: string; // "21"
-  options: { type: OptionType; value: string; priceDelta: string }[];
-}
+export type { PickerProduct };
 
 export interface PickerCustomer {
   id: string;
@@ -38,77 +38,11 @@ export interface PickerCustomer {
   addressCountry: string | null;
 }
 
-const OPTION_LABELS: Record<OptionType, string> = {
-  MATERIAL: "Materiaal",
-  SIZE: "Maat",
-  STYLE: "Stijl",
-  DESIGN: "Ontwerp",
-};
-const OPTION_KEYS: Record<OptionType, "material" | "size" | "style" | "design"> = {
-  MATERIAL: "material",
-  SIZE: "size",
-  STYLE: "style",
-  DESIGN: "design",
-};
-const OPTION_TYPES: OptionType[] = ["MATERIAL", "SIZE", "STYLE", "DESIGN"];
-
 const START_STATUSES = [
   { value: "NEW", label: "Nieuw" },
   { value: "QUOTE_SENT", label: "Offerte verstuurd" },
   { value: "CONFIRMED", label: "Bevestigd" },
 ] as const;
-
-interface Line {
-  key: number;
-  productId: string; // "" = free line
-  name: string;
-  unitPrice: string;
-  quantity: string;
-  vatRate: string;
-  material: string;
-  size: string;
-  style: string;
-  design: string;
-  remarks: string;
-}
-
-const emptyLine = (key: number): Line => ({
-  key,
-  productId: "",
-  name: "",
-  unitPrice: "",
-  quantity: "1",
-  vatRate: "21",
-  material: "",
-  size: "",
-  style: "",
-  design: "",
-  remarks: "",
-});
-
-/** "12,50" / "12.5" → 1250 cents; NaN when not a valid amount. */
-function toCents(value: string): number {
-  const v = value.trim().replace(",", ".");
-  if (!/^-?\d+(\.\d{1,2})?$/.test(v)) return NaN;
-  return Math.round(Number(v) * 100);
-}
-
-const eur = new Intl.NumberFormat("nl-BE", { style: "currency", currency: "EUR" });
-const formatCents = (cents: number) => eur.format(cents / 100);
-
-/** Catalogue price for a product with the chosen options (base + deltas). */
-function catalogueCents(product: PickerProduct, line: Line): number {
-  let cents = toCents(product.basePrice);
-  for (const type of OPTION_TYPES) {
-    const chosen = line[OPTION_KEYS[type]];
-    if (!chosen) continue;
-    const opt = product.options.find((o) => o.type === type && o.value === chosen);
-    if (opt) cents += toCents(opt.priceDelta);
-  }
-  return cents;
-}
-
-const centsToInput = (cents: number) => (cents / 100).toFixed(2).replace(".", ",");
 
 export default function ManualOrderForm({
   products,
@@ -123,11 +57,6 @@ export default function ManualOrderForm({
     ManualOrderFormState | undefined,
     FormData
   >(createManualOrderAction, undefined);
-
-  const productById = useMemo(
-    () => new Map(products.map((p) => [p.id, p])),
-    [products],
-  );
 
   // ---- Customer --------------------------------------------------------
   const [customerMode, setCustomerMode] = useState<"existing" | "new">(
@@ -181,53 +110,12 @@ export default function ManualOrderForm({
   const [internalNote, setInternalNote] = useState("");
 
   // ---- Lines -----------------------------------------------------------
-  const [nextKey, setNextKey] = useState(2);
   const [lines, setLines] = useState<Line[]>([emptyLine(1)]);
-
-  const addLine = () => {
-    setLines((ls) => [...ls, emptyLine(nextKey)]);
-    setNextKey((k) => k + 1);
-  };
-  const removeLine = (key: number) =>
-    setLines((ls) => ls.filter((l) => l.key !== key));
-  const updateLine = (key: number, patch: Partial<Line>) =>
-    setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
-
-  function onProductChange(key: number, productId: string) {
-    const product = productById.get(productId);
-    if (!product) {
-      // Back to a free line: keep what was typed, drop the catalogue options.
-      updateLine(key, { productId: "", material: "", size: "", style: "", design: "" });
-      return;
-    }
-    updateLine(key, {
-      productId,
-      name: product.name,
-      unitPrice: centsToInput(toCents(product.basePrice)),
-      vatRate: product.vatRate,
-      material: "",
-      size: "",
-      style: "",
-      design: "",
-    });
-  }
-
-  function onOptionChange(line: Line, type: OptionType, value: string) {
-    const product = productById.get(line.productId);
-    const next = { ...line, [OPTION_KEYS[type]]: value };
-    // Re-price from the catalogue when an option changes (you can still
-    // overwrite the price afterwards).
-    const patch: Partial<Line> = { [OPTION_KEYS[type]]: value };
-    if (product) patch.unitPrice = centsToInput(catalogueCents(product, next));
-    updateLine(line.key, patch);
-  }
-
-  const lineCents = lines.map((l) => {
-    const price = toCents(l.unitPrice);
-    const qty = Number(l.quantity);
-    return Number.isFinite(price) && Number.isInteger(qty) && qty > 0 ? price * qty : NaN;
-  });
-  const totalCents = lineCents.reduce((s, c) => s + (Number.isNaN(c) ? 0 : c), 0);
+  const used = usedLines(lines);
+  const totalCents = used.reduce((sum, l) => {
+    const c = lineCents(l);
+    return sum + (Number.isNaN(c) ? 0 : c);
+  }, 0);
 
   // ---- Delivery --------------------------------------------------------
   const [delivery, setDelivery] = useState({
@@ -267,11 +155,6 @@ export default function ManualOrderForm({
   }
 
   // ---- Payload ---------------------------------------------------------
-  // Blank lines (no product, no name, no price) are ignored so an unused
-  // empty row doesn't block saving.
-  const usedLines = lines.filter(
-    (l) => l.productId || l.name.trim() || l.unitPrice.trim(),
-  );
   const payload = JSON.stringify({
     customer:
       customerMode === "existing"
@@ -280,18 +163,7 @@ export default function ManualOrderForm({
     type,
     channel,
     initialStatus,
-    items: usedLines.map((l) => ({
-      productId: l.productId || null,
-      name: l.name,
-      unitPrice: l.unitPrice,
-      quantity: l.quantity,
-      vatRate: l.vatRate,
-      material: l.material,
-      size: l.size,
-      style: l.style,
-      design: l.design,
-      remarks: l.remarks,
-    })),
+    items: linesToPayload(lines),
     delivery,
     customerRemarks,
     designBrief,
@@ -520,129 +392,7 @@ export default function ManualOrderForm({
             aanpassen — een negatieve lijn werkt als korting.
           </p>
 
-          {lines.map((line, idx) => {
-            const product = productById.get(line.productId);
-            const optionTypes = product
-              ? OPTION_TYPES.filter((t) => product.options.some((o) => o.type === t))
-              : [];
-            const cents = lineCents[idx];
-            return (
-              <div key={line.key} className="item-block order-line">
-                <div className="order-line-grid">
-                  <label className="field order-line-product">
-                    Product
-                    <select
-                      value={line.productId}
-                      onChange={(e) => onProductChange(line.key, e.target.value)}
-                    >
-                      <option value="">— Vrije lijn (maatwerk, dienst, korting…) —</option>
-                      {products.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} — {formatCents(toCents(p.basePrice))} · {p.sku}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field order-line-qty">
-                    Aantal
-                    <input
-                      type="number"
-                      min={1}
-                      step={1}
-                      value={line.quantity}
-                      onChange={(e) => updateLine(line.key, { quantity: e.target.value })}
-                    />
-                  </label>
-                  <label className="field order-line-price">
-                    Stukprijs
-                    <input
-                      inputMode="decimal"
-                      value={line.unitPrice}
-                      onChange={(e) => updateLine(line.key, { unitPrice: e.target.value })}
-                      placeholder="0,00"
-                    />
-                  </label>
-                  <label className="field order-line-vat">
-                    Btw
-                    <select
-                      value={line.vatRate}
-                      disabled={!!product}
-                      title={product ? "Btw-tarief van het product" : undefined}
-                      onChange={(e) => updateLine(line.key, { vatRate: e.target.value })}
-                    >
-                      {["21", "12", "6", "0"].map((r) => (
-                        <option key={r} value={r}>
-                          {r}%
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="order-line-total">
-                    <span className="muted small">Totaal</span>
-                    <strong>{Number.isNaN(cents) ? "—" : formatCents(cents)}</strong>
-                  </div>
-                </div>
-
-                <div className="order-line-grid order-line-grid--details">
-                  <label className="field order-line-name">
-                    Omschrijving {product ? "(op factuur)" : "*"}
-                    <input
-                      value={line.name}
-                      onChange={(e) => updateLine(line.key, { name: e.target.value })}
-                      placeholder={product ? product.name : "bv. Naambord 40 cm, eik"}
-                    />
-                  </label>
-                  {optionTypes.map((t) => (
-                    <label key={t} className="field">
-                      {OPTION_LABELS[t]}
-                      <select
-                        value={line[OPTION_KEYS[t]]}
-                        onChange={(e) => onOptionChange(line, t, e.target.value)}
-                      >
-                        <option value="">—</option>
-                        {product!.options
-                          .filter((o) => o.type === t)
-                          .map((o) => (
-                            <option key={o.value} value={o.value}>
-                              {o.value}
-                              {toCents(o.priceDelta) !== 0
-                                ? ` (${toCents(o.priceDelta) > 0 ? "+" : ""}${formatCents(toCents(o.priceDelta))})`
-                                : ""}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
-                  ))}
-                  <label className="field order-line-remarks">
-                    Personalisatie / opmerking
-                    <input
-                      value={line.remarks}
-                      onChange={(e) => updateLine(line.key, { remarks: e.target.value })}
-                      placeholder="bv. tekst om te graveren"
-                    />
-                  </label>
-                </div>
-
-                {lines.length > 1 && (
-                  <button
-                    type="button"
-                    className="btn-link-danger order-line-remove"
-                    onClick={() => removeLine(line.key)}
-                  >
-                    Verwijderen
-                  </button>
-                )}
-              </div>
-            );
-          })}
-
-          <button
-            type="button"
-            className="btn-ghost btn-ghost--dark btn-inline"
-            onClick={addLine}
-          >
-            + Lijn toevoegen
-          </button>
+          <OrderLinesEditor products={products} lines={lines} onChange={setLines} />
         </section>
 
         {/* ---------------- Details ---------------- */}
@@ -796,7 +546,7 @@ export default function ManualOrderForm({
           <div className="totals-box totals-box--full">
             <div className="totals-line">
               <span>
-                {usedLines.length} {usedLines.length === 1 ? "lijn" : "lijnen"}
+                {used.length} {used.length === 1 ? "lijn" : "lijnen"}
               </span>
             </div>
             <div className="totals-line totals-line--strong">

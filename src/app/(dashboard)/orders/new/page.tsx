@@ -41,6 +41,7 @@ export default async function NewOrderPage({
     name: p.name,
     basePrice: p.basePrice.toFixed(2),
     vatRate: p.vatRate.toFixed(0),
+    active: p.active,
     options: p.options.map((o) => ({
       type: o.type,
       value: o.value,

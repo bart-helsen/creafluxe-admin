@@ -5,7 +5,7 @@ import { computeInvoiceTotals } from "@/server/invoices/invoiceMath";
 import { nextOrderNumber } from "@/server/counters";
 import { createDraftInvoice } from "@/server/invoices/createDraftInvoice";
 import { MANUAL_ORDER_CHANNELS } from "@/lib/manual-order";
-import type { ManualOrderInput } from "@/lib/validation";
+import type { ManualOrderInput, ManualOrderItemInput } from "@/lib/validation";
 
 // Manual order ("Nieuwe bestelling" in the admin): for customers who ask you
 // directly instead of ordering through the webshop. Same data model and the
@@ -64,12 +64,13 @@ async function resolveCustomer(
   return db.customer.create({ data });
 }
 
-export async function createManualOrder(
-  input: ManualOrderInput,
-  userId: string,
-): Promise<{ orderId: string; orderNumber: number }> {
-  // Validate catalogue references up front; snapshot the product name.
-  const productIds = input.items
+/**
+ * Turn submitted lines into OrderItem data. Catalogue references are checked
+ * and keep the product's own VAT rate; the entered price is kept as-is (the
+ * admin is trusted). Shared by "Nieuwe bestelling" and "Bestelling bewerken".
+ */
+export async function priceManualLines(items: ManualOrderItemInput[]) {
+  const productIds = items
     .map((it) => it.productId)
     .filter((id): id is string => !!id);
   const products = productIds.length
@@ -77,7 +78,7 @@ export async function createManualOrder(
     : [];
   const productById = new Map(products.map((p) => [p.id, p]));
 
-  const lines = input.items.map((it) => {
+  return items.map((it) => {
     const product = it.productId ? productById.get(it.productId) : undefined;
     if (it.productId && !product) {
       throw new ManualOrderError(`Product voor lijn "${it.name}" niet gevonden.`);
@@ -98,6 +99,13 @@ export async function createManualOrder(
       remarks: it.remarks,
     };
   });
+}
+
+export async function createManualOrder(
+  input: ManualOrderInput,
+  userId: string,
+): Promise<{ orderId: string; orderNumber: number }> {
+  const lines = await priceManualLines(input.items);
 
   const totals = computeInvoiceTotals(
     lines.map((l) => ({
