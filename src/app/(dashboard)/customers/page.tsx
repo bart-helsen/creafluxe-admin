@@ -34,8 +34,8 @@ export default async function CustomersPage({
       <header className="page-header">
         <h1>Klanten</h1>
         <p className="muted">
-          Klanten worden automatisch aangemaakt bij een bestelling. Zoek en open
-          hun geschiedenis.
+          Klanten worden automatisch aangemaakt bij een bestelling (webshop of
+          manueel). Zoek en open hun geschiedenis.
         </p>
       </header>
 
@@ -78,7 +78,7 @@ export default async function CustomersPage({
                       <div className="muted small">{c.companyName}</div>
                     )}
                   </td>
-                  <td className="muted small">{c.email}</td>
+                  <td className="muted small">{c.email || c.phone}</td>
                   <td>
                     <span className="status-pill">
                       {c.isBusiness ? "Onderneming" : "Particulier"}

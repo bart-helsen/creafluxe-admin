@@ -928,6 +928,217 @@ a.btn-primary {
   margin-top: 12px;
 }
 
+/* ---------- Manual order ("Nieuwe bestelling") ---------- */
+.segmented {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0 14px;
+}
+
+button.tab {
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+}
+
+.btn-inline {
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.btn-text {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--brand);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.hint {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--accent);
+}
+
+.form-grid .field textarea {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  width: 100%;
+  resize: vertical;
+}
+
+.form-grid .field textarea:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(22, 34, 58, 0.12);
+}
+
+.form-grid .field select:disabled {
+  background: #f5f6f8;
+  color: var(--muted);
+}
+
+.form-grid--single {
+  grid-template-columns: 1fr;
+}
+
+.customer-search input {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fff;
+}
+
+.customer-search input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(22, 34, 58, 0.12);
+}
+
+.customer-results {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.customer-results li + li {
+  border-top: 1px solid var(--line);
+}
+
+.customer-results li > button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 12px;
+  border: none;
+  background: #fff;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.customer-results li > button:hover {
+  background: #f5f6f8;
+}
+
+.customer-results-empty {
+  padding: 9px 12px;
+}
+
+.picked-customer {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafbfc;
+}
+
+.order-line {
+  position: relative;
+  margin-top: 12px;
+}
+
+.order-line-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) 80px 120px 80px 100px;
+  gap: 10px;
+  align-items: end;
+}
+
+.order-line-grid--details {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin-top: 10px;
+}
+
+.order-line-name,
+.order-line-remarks {
+  grid-column: span 2;
+}
+
+.order-line .field input,
+.order-line .field select {
+  font-weight: 400;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fff;
+  color: var(--ink);
+  width: 100%;
+  min-width: 0;
+}
+
+.order-line .field select:disabled {
+  background: #f5f6f8;
+  color: var(--muted);
+}
+
+.order-line .field input:focus,
+.order-line .field select:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(22, 34, 58, 0.12);
+}
+
+.order-line-total {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  padding-bottom: 8px;
+}
+
+.order-line-remove {
+  margin-top: 8px;
+}
+
+.manual-order-summary {
+  position: sticky;
+  top: 20px;
+}
+
+.totals-box--full {
+  max-width: none;
+}
+
+@media (max-width: 900px) {
+  .order-line-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .order-line-product,
+  .order-line-name,
+  .order-line-remarks {
+    grid-column: 1 / -1;
+  }
+  .order-line-total {
+    align-items: flex-start;
+  }
+  .manual-order-summary {
+    position: static;
+  }
+}
+
 @media (max-width: 900px) {
   .detail-grid {
     grid-template-columns: 1fr;

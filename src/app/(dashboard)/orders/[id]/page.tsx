@@ -11,6 +11,7 @@ import {
   changeStatusAction,
   regenerateInvoiceAction,
 } from "@/lib/dashboard-actions";
+import { channelLabel } from "@/lib/manual-order";
 
 export default async function OrderDetailPage({
   params,
@@ -56,7 +57,8 @@ export default async function OrderDetailPage({
           </Link>
           <h1>Bestelling #{order.orderNumber}</h1>
           <p className="muted">
-            {order.type} · ontvangen {formatDateTime(order.createdAt)} ·{" "}
+            {order.type} · via {channelLabel(order.channel).toLowerCase()} ·
+            ontvangen {formatDateTime(order.createdAt)} ·{" "}
             <span className="status-pill">{STATUS_LABELS[order.status]}</span>
           </p>
         </div>
@@ -170,7 +172,12 @@ export default async function OrderDetailPage({
                 <strong>{order.customer.companyName}</strong>
               )}
               <span>{order.customer.name}</span>
-              <a href={`mailto:${order.customer.email}`}>{order.customer.email}</a>
+              <Link href={`/customers/${order.customer.id}`} className="link-strong">
+                Klantfiche →
+              </Link>
+              {order.customer.email && (
+                <a href={`mailto:${order.customer.email}`}>{order.customer.email}</a>
+              )}
               {order.customer.phone && <span>{order.customer.phone}</span>}
               {order.customer.isBusiness && (
                 <span className="muted small">

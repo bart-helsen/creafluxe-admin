@@ -30,18 +30,23 @@ export default async function CustomerDetailPage({
 
   return (
     <div className="page">
-      <header className="page-header">
-        <Link href="/customers" className="muted small">
-          ← Klanten
+      <header className="page-header detail-header">
+        <div>
+          <Link href="/customers" className="muted small">
+            ← Klanten
+          </Link>
+          <h1>{customer.name}</h1>
+          <p className="muted">
+            {customer.email || customer.phone}
+            {customer.companyName ? ` · ${customer.companyName}` : ""} ·{" "}
+            <span className="status-pill">
+              {customer.isBusiness ? "Onderneming" : "Particulier"}
+            </span>
+          </p>
+        </div>
+        <Link href={`/orders/new?customer=${customer.id}`} className="btn-primary">
+          + Nieuwe bestelling
         </Link>
-        <h1>{customer.name}</h1>
-        <p className="muted">
-          {customer.email}
-          {customer.companyName ? ` · ${customer.companyName}` : ""} ·{" "}
-          <span className="status-pill">
-            {customer.isBusiness ? "Onderneming" : "Particulier"}
-          </span>
-        </p>
       </header>
 
       <div className="detail-grid">
@@ -160,7 +165,13 @@ export default async function CustomerDetailPage({
               </label>
               <label className="field">
                 E-mail
-                <input value={customer.email} disabled />
+                {customer.email ? (
+                  <input value={customer.email} disabled />
+                ) : (
+                  // Customers created by hand may have no e-mail yet — allow
+                  // adding one once (it then becomes their fixed identifier).
+                  <input name="email" type="email" placeholder="Nog geen e-mail — vul in" />
+                )}
               </label>
               <label className="field">
                 Telefoon

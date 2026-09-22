@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { formatEUR, formatDateTime } from "@/lib/money";
 import { STATUS_BUCKETS, STATUS_LABELS } from "@/server/orders/changeStatus";
+import { channelLabel } from "@/lib/manual-order";
 
 // Orders list with the three buckets you think in: New / Open / Finished
 // (Flow 4, docs/05). Tab + free-text search via the query string.
@@ -46,6 +47,7 @@ export default async function OrdersPage({
             OR: [
               { customer: { name: { contains: search, mode: "insensitive" } } },
               { customer: { email: { contains: search, mode: "insensitive" } } },
+              { customer: { phone: { contains: search } } },
               ...(Number.isInteger(searchNumber)
                 ? [{ orderNumber: searchNumber }]
                 : []),
@@ -60,12 +62,17 @@ export default async function OrdersPage({
 
   return (
     <div className="page">
-      <header className="page-header">
-        <h1>Bestellingen</h1>
-        <p className="muted">
-          Alle bestellingen komen hier binnen — geen e-mails meer om uit te
-          pluizen.
-        </p>
+      <header className="page-header detail-header">
+        <div>
+          <h1>Bestellingen</h1>
+          <p className="muted">
+            Alle bestellingen komen hier binnen — geen e-mails meer om uit te
+            pluizen.
+          </p>
+        </div>
+        <Link href="/orders/new" className="btn-primary">
+          + Nieuwe bestelling
+        </Link>
       </header>
 
       <div className="tabs">
@@ -84,7 +91,7 @@ export default async function OrdersPage({
           <input
             type="search"
             name="q"
-            placeholder="Zoek op naam, e-mail of #"
+            placeholder="Zoek op naam, e-mail, telefoon of #"
             defaultValue={search}
           />
         </form>
@@ -117,7 +124,10 @@ export default async function OrdersPage({
                   </td>
                   <td>
                     <div>{o.customer.name}</div>
-                    <div className="muted small">{o.customer.email}</div>
+                    <div className="muted small">
+                      {o.customer.email || o.customer.phone}
+                      {o.channel !== "website" && ` · via ${channelLabel(o.channel).toLowerCase()}`}
+                    </div>
                   </td>
                   <td>{o._count.items}</td>
                   <td>{formatEUR(o.total.toString())}</td>

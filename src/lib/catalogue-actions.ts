@@ -292,10 +292,25 @@ export async function updateCustomerAction(formData: FormData): Promise<void> {
   const id = str(formData, "id");
   if (!id) throw new Error("Onbekende klant.");
 
+  // E-mail can only be added when the customer has none yet (manual orders
+  // allow phone-only customers); an existing e-mail stays fixed.
+  const newEmail = str(formData, "email").toLowerCase();
+  let email: string | undefined;
+  if (newEmail) {
+    const current = await prisma.customer.findUnique({
+      where: { id },
+      select: { email: true },
+    });
+    if (current && !current.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+      email = newEmail;
+    }
+  }
+
   await prisma.customer.update({
     where: { id },
     data: {
       name: str(formData, "name") || undefined,
+      ...(email ? { email } : {}),
       phone: optStr(formData, "phone"),
       isBusiness: formData.get("isBusiness") != null,
       vatNumber: optStr(formData, "vatNumber"),
