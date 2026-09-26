@@ -10,7 +10,7 @@ export default function LoginPage() {
     <main className="login-shell">
       <div className="login-card">
         <div className="login-brand">
-          <span className="login-logo">CF</span>
+          <img src="/logo-mark.png" alt="Creafluxe" className="login-logo" />
           <div>
             <h1>Creafluxe</h1>
             <p>Administration</p>

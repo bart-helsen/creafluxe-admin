@@ -31,7 +31,7 @@ export default async function DashboardLayout({
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <span className="login-logo">CF</span>
+          <img src="/logo-mark.png" alt="Creafluxe" className="login-logo" />
           <div>
             <strong>Creafluxe</strong>
             <span>Administration</span>
