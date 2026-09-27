@@ -17,8 +17,12 @@ export type ManualOrderChannel = keyof typeof MANUAL_ORDER_CHANNELS;
 /** Statuses a manual order may start in (production statuses go via the normal flow). */
 export const MANUAL_ORDER_START_STATUSES = ["NEW", "QUOTE_SENT", "CONFIRMED"] as const;
 
-/** Human label for Order.channel on screens (website + manual channels). */
-export function channelLabel(channel: string): string {
-  if (channel === "website") return "Webshop";
+/**
+ * Human label for Order.channel / QuoteRequest.channel on screens (website +
+ * manual channels). Custom work from the website came in through the Atelier
+ * form, not the webshop — pass custom = true to say so.
+ */
+export function channelLabel(channel: string, custom = false): string {
+  if (channel === "website") return custom ? "Atelier (website)" : "Webshop";
   return (MANUAL_ORDER_CHANNELS as Record<string, string>)[channel] ?? channel;
 }

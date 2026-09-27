@@ -221,6 +221,32 @@ curl -X POST http://localhost:3000/api/orders/intake \
   number), status updates, a Dexxter-reference field, and a PDF at
   `/invoices/:id/pdf`.
 
+### Custom requests & offers (Aanvragen & offertes)
+
+Custom work no longer lands in **Bestellingen** straight away. The flow is:
+
+1. **Aanvraag** — an Atelier submission from the website (the intake API with
+   `"type":"CUSTOM"` now creates a request instead of an order, same URL, no
+   website change) or one you enter under *Aanvragen → Nieuwe aanvraag*. The
+   request page shows the brief, files, and a timeline where you log questions
+   to the customer and their answers (a question sets the status to *Wacht op
+   klant*, an answer back to *In behandeling*).
+2. **Offerte** — *+ Nieuwe offerte* on the request. Each line can carry a
+   costing (materials + machine minutes + hours per piece, plus one-off
+   design/set-up hours spread over the quantity) using the same rates and
+   markup as the Kostprijs calculator; you choose the price (excl. or incl.
+   VAT — stored incl. VAT like orders). Download the PDF at
+   `/offers/:id/pdf`, send it, then *Markeer als verstuurd*. Need changes?
+   *Nieuwe versie* copies it into a new draft.
+3. **Klant aanvaardt** — creates a normal order (status *Bevestigd*) with the
+   offer lines and a draft invoice, linked back to the request and offer. When
+   it goes *In productie*, the materials costed on the offer are deducted from
+   stock.
+
+Code: `src/server/requests/`, `src/server/offers/`, `src/lib/request-actions.ts`,
+`src/lib/offer-cost.ts` (costing math), `src/components/OfferEditor.tsx`.
+Migration: `20260927120000_add_requests_and_offers` (additive only).
+
 ### Optional services (graceful without them locally)
 
 - **Cloudflare R2** (`R2_*`): design-file storage. Without it, presign returns

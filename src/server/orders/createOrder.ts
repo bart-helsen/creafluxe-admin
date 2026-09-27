@@ -6,6 +6,7 @@ import { nextOrderNumber } from "@/server/counters";
 import { createDraftInvoice } from "@/server/invoices/createDraftInvoice";
 import { notifyNewOrder } from "@/server/notifications/notifyNewOrder";
 import type { IntakeInput, IntakeItemInput } from "@/lib/validation";
+import { upsertIntakeCustomer } from "@/server/customers/upsertIntakeCustomer";
 
 // Flow 1 (docs/05): turn a validated intake payload into a persisted Order,
 // then fire the automation chain (draft invoice + notification). Catalogue
@@ -19,7 +20,7 @@ export interface CreateOrderResult {
 }
 
 /** Guess a filename + mime type from an R2 storage key (all we get at intake). */
-function assetFromKey(storageKey: string): {
+export function assetFromKey(storageKey: string): {
   fileName: string;
   mimeType: string;
 } {
@@ -112,22 +113,7 @@ export async function createOrder(
   }
 
   // Find-or-create the customer by email; refresh contact details from intake.
-  const email = input.customer.email.toLowerCase();
-  const existingCustomer = await prisma.customer.findFirst({ where: { email } });
-  const customerData = {
-    name: input.customer.name,
-    email,
-    phone: input.customer.phone ?? undefined,
-    isBusiness: input.customer.isBusiness,
-    vatNumber: input.customer.vatNumber ?? undefined,
-    companyName: input.customer.companyName ?? undefined,
-  };
-  const customer = existingCustomer
-    ? await prisma.customer.update({
-        where: { id: existingCustomer.id },
-        data: customerData,
-      })
-    : await prisma.customer.create({ data: customerData });
+  const customer = await upsertIntakeCustomer(input.customer);
 
   // Re-price every line before we persist anything.
   const priced = await Promise.all(input.items.map(priceLine));

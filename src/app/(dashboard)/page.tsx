@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Prisma } from "@prisma/client";
+import { Prisma, type RequestStatus } from "@prisma/client";
+import { REQUEST_BUCKETS } from "@/lib/requests";
 import { prisma } from "@/lib/db";
 import { formatEUR, formatDateTime } from "@/lib/money";
 import { STATUS_BUCKETS, STATUS_LABELS } from "@/server/orders/changeStatus";
@@ -13,8 +14,17 @@ export default async function DashboardHome() {
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
 
-  const [newCount, openCount, draftCount, materials, monthOrders, monthPaid, recent] =
-    await Promise.all([
+  const [
+    newCount,
+    openCount,
+    draftCount,
+    materials,
+    monthOrders,
+    monthPaid,
+    recent,
+    newRequests,
+    openRequests,
+  ] = await Promise.all([
       prisma.order.count({ where: { status: { in: STATUS_BUCKETS.NEW } } }),
       prisma.order.count({ where: { status: { in: STATUS_BUCKETS.OPEN } } }),
       prisma.invoice.count({ where: { status: "DRAFT" } }),
@@ -32,6 +42,10 @@ export default async function DashboardHome() {
         orderBy: { createdAt: "desc" },
         take: 8,
       }),
+      prisma.quoteRequest.count({ where: { status: "NEW" } }),
+      prisma.quoteRequest.count({
+        where: { status: { in: REQUEST_BUCKETS.OPEN as RequestStatus[] } },
+      }),
     ]);
 
   const lowCount = materials.filter((m) =>
@@ -43,10 +57,17 @@ export default async function DashboardHome() {
     <div className="page">
       <header className="page-header">
         <h1>Dashboard</h1>
-        <p className="muted">Overzicht van bestellingen en facturen.</p>
+        <p className="muted">Overzicht van aanvragen, bestellingen en facturen.</p>
       </header>
 
       <section className="card-grid">
+        <Link href="/requests?bucket=OPEN" className="stat-card stat-card--link">
+          <span className="stat-label">Aanvragen</span>
+          <span className="stat-value">{openRequests}</span>
+          <span className="stat-hint">
+            {newRequests > 0 ? `${newRequests} nieuw · ` : ""}wachten op offerte of antwoord
+          </span>
+        </Link>
         <Link href="/orders?bucket=NEW" className="stat-card stat-card--link">
           <span className="stat-label">Nieuwe bestellingen</span>
           <span className="stat-value">{newCount}</span>

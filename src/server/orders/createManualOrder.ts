@@ -5,7 +5,11 @@ import { computeInvoiceTotals } from "@/server/invoices/invoiceMath";
 import { nextOrderNumber } from "@/server/counters";
 import { createDraftInvoice } from "@/server/invoices/createDraftInvoice";
 import { MANUAL_ORDER_CHANNELS } from "@/lib/manual-order";
-import type { ManualOrderInput, ManualOrderItemInput } from "@/lib/validation";
+import type {
+  CustomerChoiceInput,
+  ManualOrderInput,
+  ManualOrderItemInput,
+} from "@/lib/validation";
 
 // Manual order ("Nieuwe bestelling" in the admin): for customers who ask you
 // directly instead of ordering through the webshop. Same data model and the
@@ -15,10 +19,13 @@ import type { ManualOrderInput, ManualOrderItemInput } from "@/lib/validation";
 
 export class ManualOrderError extends Error {}
 
-/** Resolve the customer: an existing one, or create / reuse by e-mail. */
-async function resolveCustomer(
+/**
+ * Resolve the customer: an existing one, or create / reuse by e-mail. Shared by
+ * manual orders and manual requests ("Nieuwe aanvraag").
+ */
+export async function resolveCustomer(
   db: Prisma.TransactionClient,
-  input: ManualOrderInput["customer"],
+  input: CustomerChoiceInput,
 ): Promise<Customer> {
   if (input.mode === "existing") {
     const customer = await db.customer.findUnique({ where: { id: input.id } });

@@ -12,6 +12,7 @@ import {
   regenerateInvoiceAction,
 } from "@/lib/dashboard-actions";
 import { channelLabel } from "@/lib/manual-order";
+import { formatRequestNumber } from "@/lib/requests";
 import OrderEditPanel from "@/components/OrderEditPanel";
 import type { Line, PickerProduct } from "@/components/OrderLinesEditor";
 
@@ -31,6 +32,8 @@ export default async function OrderDetailPage({
         include: { _count: { select: { customDesigns: true } } },
       },
       invoice: true,
+      request: { select: { id: true, requestNumber: true } },
+      offer: { select: { id: true, offerNumber: true } },
       statusEvents: {
         orderBy: { createdAt: "desc" },
         include: { changedBy: true },
@@ -110,10 +113,27 @@ export default async function OrderDetailPage({
           </Link>
           <h1>Bestelling #{order.orderNumber}</h1>
           <p className="muted">
-            {order.type} · via {channelLabel(order.channel).toLowerCase()} ·
+            {order.type} · via {channelLabel(order.channel, order.type === "CUSTOM").toLowerCase()} ·
             ontvangen {formatDateTime(order.createdAt)} ·{" "}
             <span className="status-pill">{STATUS_LABELS[order.status]}</span>
           </p>
+          {order.request && (
+            <p className="muted small">
+              Uit{" "}
+              <Link href={`/requests/${order.request.id}`} className="link-strong">
+                aanvraag {formatRequestNumber(order.request.requestNumber)}
+              </Link>
+              {order.offer && (
+                <>
+                  {" "}
+                  · offerte{" "}
+                  <Link href={`/offers/${order.offer.id}`} className="link-strong">
+                    {order.offer.offerNumber}
+                  </Link>
+                </>
+              )}
+            </p>
+          )}
         </div>
       </header>
 
@@ -123,7 +143,7 @@ export default async function OrderDetailPage({
           <section className="panel">
             <h2>Artikelen &amp; ontwerpbestanden</h2>
             {order.items.length === 0 && (
-              <p className="muted">Geen catalogusartikelen (custom aanvraag).</p>
+              <p className="muted">Geen artikelen (custom aanvraag).</p>
             )}
             {order.items.map((it) => {
               const files = designByItem.get(it.id) ?? [];

@@ -1228,3 +1228,249 @@ button.tab {
     width: 100%;
   }
 }
+
+/* ===========================================================================
+   Aanvragen & offertes (custom requests and offers)
+   =========================================================================== */
+
+.prewrap {
+  white-space: pre-wrap;
+}
+
+/* Status colours: requests */
+.status-pill--new,
+.status-pill--offer-draft {
+  background: #fff4ed;
+  color: var(--accent-text);
+}
+.status-pill--waiting_customer {
+  background: #fef7c3;
+  color: #854a0e;
+}
+.status-pill--offer_sent,
+.status-pill--offer-sent {
+  background: #eff4ff;
+  color: #1d4ed8;
+}
+.status-pill--accepted,
+.status-pill--offer-accepted {
+  background: #ecfdf3;
+  color: #067647;
+}
+.status-pill--declined,
+.status-pill--cancelled,
+.status-pill--offer-declined,
+.status-pill--offer-superseded {
+  background: var(--surface-alt);
+  color: var(--muted);
+}
+
+/* A form that is just a button (header / row actions) */
+.inline-actions {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+.inline-actions .btn-primary,
+.inline-actions .btn-ghost--dark {
+  width: auto;
+}
+.inline-actions .form-error {
+  margin: 0;
+}
+
+.inline-details {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.inline-details summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-text);
+}
+
+.stack-form textarea,
+.log-form textarea {
+  font: inherit;
+  font-size: 14px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+  width: 100%;
+  resize: vertical;
+}
+.stack-form textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(229, 98, 46, 0.16);
+}
+.log-form {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.log-form .calc-row {
+  grid-template-columns: minmax(0, 240px);
+}
+
+/* Timeline: questions and answers stand out from the rest */
+.timeline-item--question .timeline-dot {
+  background: #eab308;
+}
+.timeline-item--answer .timeline-dot {
+  background: #16a34a;
+}
+.timeline-item--note .timeline-dot,
+.timeline-item--status .timeline-dot {
+  background: var(--line-hover);
+}
+.timeline-item--question > div:last-child,
+.timeline-item--answer > div:last-child {
+  background: var(--bg);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  flex: 1;
+}
+
+.steps {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.segmented--compact {
+  margin: 0;
+}
+.segmented--compact .tab {
+  padding: 5px 10px;
+  font-size: 13px;
+}
+
+/* Offer editor lines */
+.offer-line {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+.offer-line:first-of-type {
+  margin-top: 4px;
+}
+.offer-line-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) 70px 130px 80px 100px;
+  gap: 10px;
+  align-items: end;
+}
+.offer-line .field textarea {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+  width: 100%;
+  resize: vertical;
+}
+.offer-line .field textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(229, 98, 46, 0.16);
+}
+.offer-line-tools {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+.input-invalid {
+  border-color: var(--danger) !important;
+}
+
+.costing {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 18px;
+  margin-top: 10px;
+  padding: 14px;
+  background: var(--bg);
+  border-radius: var(--radius);
+}
+.costing h4 {
+  margin: 10px 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.costing h4:first-child {
+  margin-top: 0;
+}
+.costing-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.calc-row--removable {
+  grid-template-columns: 1fr 110px 24px;
+  align-items: center;
+}
+.costing-hours {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.costing-result {
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  align-self: start;
+}
+.costing-use {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+
+@container (max-width: 640px) {
+  .offer-line .offer-line-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .offer-line .offer-line-desc {
+    grid-column: 1 / -1;
+  }
+  .offer-line .costing {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .offer-line-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .offer-line-desc {
+    grid-column: 1 / -1;
+  }
+  .costing {
+    grid-template-columns: 1fr;
+  }
+}
+
+.table-wrap + p {
+  margin-top: 10px;
+}
+
+.nowrap,
+.data-table .status-pill {
+  white-space: nowrap;
+}

@@ -37,6 +37,7 @@ model User {
 
   statusChanges  OrderStatusEvent[]
   stockMovements StockMovement[]
+  requestEvents  RequestEvent[]
 }
 
 enum UserRole {
@@ -70,6 +71,7 @@ model Customer {
 
   orders   Order[]
   invoices Invoice[]
+  requests QuoteRequest[]
 
   @@index([email])
 }
@@ -195,10 +197,17 @@ model DesignAsset {
   orderItemId String?
   orderItem   OrderItem? @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
 
+  // For files attached to a custom request (Aanvraag) — the customer's sketch,
+  // photo or design file. When the request becomes an order the same asset is
+  // also linked to the first order item, so it shows up there too.
+  requestId String?
+  request   QuoteRequest? @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
   createdAt DateTime @default(now())
 
   @@index([productId])
   @@index([orderItemId])
+  @@index([requestId])
 }
 
 enum DesignAssetKind {
@@ -250,6 +259,10 @@ model Order {
   notifications NotificationLog[]
   stockMovements StockMovement[] // material consumed producing this order
 
+  // Set when this order was created from an accepted offer on a custom request.
+  request QuoteRequest?
+  offer   Offer?
+
   @@index([status])
   @@index([createdAt])
 }
@@ -297,6 +310,11 @@ model OrderItem {
   // Custom design files the customer uploaded for THIS line.
   customDesigns DesignAsset[]
 
+  // The accepted offer line this item came from (custom requests). Used to
+  // deduct that line's costed materials from stock when production starts.
+  offerLineId String?
+  offerLine   OfferLine? @relation(fields: [offerLineId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
 
   @@index([orderId])
@@ -315,6 +333,179 @@ model OrderStatusEvent {
   createdAt  DateTime     @default(now())
 
   @@index([orderId])
+}
+
+// ===========================================================================
+// CUSTOM REQUESTS & OFFERS  (Aanvragen & offertes)
+//   A custom job starts as a QuoteRequest — from the website's Atelier form or
+//   entered by hand. It is NOT an order: there is no price yet. You review it,
+//   log questions/answers with the customer (RequestEvent), then build one or
+//   more Offers. Each OfferLine can carry its own costing (materials, machine
+//   time, labour) exactly like the product cost calculator, and you set the
+//   price. When the customer accepts an offer it becomes a normal Order
+//   (status CONFIRMED) with a draft invoice; the request and offer keep a link
+//   to that order.
+// ===========================================================================
+
+model QuoteRequest {
+  id            String        @id @default(cuid())
+  requestNumber Int           @unique // human-friendly sequential number (Counter "request")
+  status        RequestStatus @default(NEW)
+  channel       String        @default("website") // same values as Order.channel
+  // Idempotency key from the website intake (a retried POST returns this request).
+  clientRef     String?       @unique
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  title           String? // short working title, e.g. "Naambord eik 60 cm"
+  description     String  // what the customer asked for (the brief)
+  customerRemarks String?
+
+  deliveryRequested Boolean @default(false)
+  deliveryStreet    String?
+  deliveryPostal    String?
+  deliveryCity      String?
+  deliveryCountry   String?
+  deliveryNotes     String?
+
+  // Set once an offer is accepted and the order is created.
+  orderId String? @unique
+  order   Order?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  offers        Offer[]
+  events        RequestEvent[]
+  attachments   DesignAsset[]
+  notifications NotificationLog[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([customerId])
+}
+
+enum RequestStatus {
+  NEW              // just arrived, not yet looked at
+  IN_REVIEW        // you're working on it (reviewing / costing)
+  WAITING_CUSTOMER // you asked the customer something
+  OFFER_SENT       // an offer is with the customer
+  ACCEPTED         // offer accepted → became an order
+  DECLINED         // customer said no
+  CANCELLED        // closed without an order (spam, duplicate, not feasible)
+}
+
+// Timeline of a request: status changes, notes, and the back-and-forth with
+// the customer (question asked / answer received), plus offer milestones.
+model RequestEvent {
+  id         String           @id @default(cuid())
+  requestId  String
+  request    QuoteRequest     @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  kind       RequestEventKind
+  fromStatus RequestStatus?
+  toStatus   RequestStatus?
+  note       String?
+  userId     String?
+  user       User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt  DateTime         @default(now())
+
+  @@index([requestId])
+}
+
+enum RequestEventKind {
+  CREATED
+  STATUS   // status changed by hand
+  NOTE     // internal note
+  QUESTION // you asked the customer something
+  ANSWER   // the customer replied
+  OFFER    // offer created / sent / accepted / declined
+}
+
+model Offer {
+  id          String      @id @default(cuid())
+  offerNumber String      @unique // "OF-2026-0001" (Counter "offer", per year)
+  version     Int         @default(1) // 1, 2, 3 … per request
+  status      OfferStatus @default(DRAFT)
+
+  requestId String
+  request   QuoteRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  validUntil DateTime?
+  intro      String? // text above the lines on the PDF
+  terms      String? // conditions below the totals on the PDF
+
+  // Totals, recomputed from the lines on every save (prices incl. VAT, like orders).
+  subtotal  Decimal @default(0.00) @db.Decimal(10, 2)
+  vatAmount Decimal @default(0.00) @db.Decimal(10, 2)
+  total     Decimal @default(0.00) @db.Decimal(10, 2)
+  costTotal Decimal? @db.Decimal(10, 2) // Σ production cost of costed lines (excl. VAT)
+
+  sentAt    DateTime?
+  decidedAt DateTime? // accepted or declined
+
+  orderId String? @unique // the order created when accepted
+  order   Order?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines OfferLine[]
+
+  @@index([requestId])
+  @@index([status])
+}
+
+enum OfferStatus {
+  DRAFT      // being prepared — editable
+  SENT       // sent to the customer
+  ACCEPTED   // customer said yes → order created
+  DECLINED   // customer said no
+  SUPERSEDED // replaced by a newer version / another offer was accepted
+}
+
+model OfferLine {
+  id        String @id @default(cuid())
+  offerId   String
+  offer     Offer  @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  sortOrder Int    @default(0)
+
+  description String
+  quantity    Int
+  unitPrice   Decimal @db.Decimal(10, 2) // incl. VAT (same convention as OrderItem)
+  vatRate     Decimal @default(21.00) @db.Decimal(5, 2)
+  lineTotal   Decimal @db.Decimal(10, 2)
+
+  // Costing inputs (all optional; per piece unless noted). Same building blocks
+  // as ProductCosting + the bill of materials.
+  machineId      String?
+  machine        Machine? @relation(fields: [machineId], references: [id], onDelete: SetNull)
+  machineMinutes Decimal? @db.Decimal(10, 2) // per piece
+  labourHours    Decimal? @db.Decimal(10, 2) // per piece (post-production)
+  setupHours     Decimal? @db.Decimal(10, 2) // once for the whole line (design / set-up)
+  // Snapshot of the calculation when the offer was last saved (excl. VAT).
+  unitCost      Decimal? @db.Decimal(10, 2) // production cost per piece
+  markupPercent Decimal? @db.Decimal(5, 2)
+
+  materials  OfferLineMaterial[]
+  orderItems OrderItem[]
+
+  @@index([offerId])
+  @@index([machineId])
+}
+
+// Material use for one piece of an offer line (like ProductMaterial for a product).
+model OfferLineMaterial {
+  id          String    @id @default(cuid())
+  offerLineId String
+  offerLine   OfferLine @relation(fields: [offerLineId], references: [id], onDelete: Cascade)
+  materialId  String
+  material    Material  @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  quantity    Decimal   @db.Decimal(12, 4) // in Material.unit, per piece
+  unitCost    Decimal?  @db.Decimal(10, 4) // snapshot of the material cost used
+
+  @@index([offerLineId])
+  @@index([materialId])
 }
 
 // ===========================================================================
@@ -485,6 +676,7 @@ model Material {
   supplierMaterials SupplierMaterial[]
   stockMovements    StockMovement[]
   bomLines          ProductMaterial[]
+  offerLineMaterials OfferLineMaterial[] // material use costed on offer lines
   samples           MaterialSample[] // showcase photos: raw + per-operation, per-machine
 
   @@index([category])
@@ -618,6 +810,7 @@ model Machine {
   updatedAt DateTime @updatedAt
 
   productCostings ProductCosting[] // products costed against this machine
+  offerLines      OfferLine[]      // offer lines costed against this machine
   materialSamples MaterialSample[] // showcase photos shot on this machine
 
   @@index([active])
@@ -686,6 +879,8 @@ model NotificationLog {
   channel   String             @default("email")
   orderId   String?
   order     Order?             @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  requestId String?
+  request   QuoteRequest?      @relation(fields: [requestId], references: [id], onDelete: SetNull)
   subject   String?
   status    NotificationStatus @default(SENT)
   error     String?
@@ -696,6 +891,7 @@ model NotificationLog {
 
 enum NotificationType {
   NEW_ORDER
+  NEW_REQUEST
   INVOICE_DRAFT_READY
   PAYMENT_RECEIVED
   ORDER_STATUS_CHANGED
@@ -711,7 +907,7 @@ enum NotificationStatus {
 // One row per (name, year); increment inside a transaction to avoid gaps/dupes.
 model Counter {
   id      String @id @default(cuid())
-  name    String // "order" | "invoice"
+  name    String // "order" | "invoice" | "request" | "offer"
   year    Int
   value   Int    @default(0)
 

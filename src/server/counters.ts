@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 
-// Atomic, gapless sequential numbers for orders and invoices.
+// Atomic, gapless sequential numbers for orders, invoices, requests and offers.
 //
 // Belgian invoices must be numbered sequentially with NO gaps (docs/03). You
 // cannot derive that from COUNT(*) (drafts/deletes would break it) or from
@@ -24,7 +24,7 @@ type Db = Prisma.TransactionClient | typeof prisma;
  * transaction (e.g. issuing an invoice).
  */
 export async function nextCounter(
-  name: "order" | "invoice",
+  name: "order" | "invoice" | "request" | "offer",
   year: number,
   db: Db = prisma,
 ): Promise<number> {
@@ -53,4 +53,21 @@ export async function nextInvoiceNumber(
 ): Promise<string> {
   const seq = await nextCounter("invoice", year, db);
   return `${year}-${String(seq).padStart(4, "0")}`;
+}
+
+/** The next custom-request number (globally sequential, shown as "A-12"). */
+export function nextRequestNumber(db: Db = prisma): Promise<number> {
+  return nextCounter("request", 0, db);
+}
+
+/**
+ * The next offer number, formatted "OF-YYYY-0001". Offers are not legal
+ * documents like invoices, so they're numbered when the draft is created.
+ */
+export async function nextOfferNumber(
+  year: number,
+  db: Db = prisma,
+): Promise<string> {
+  const seq = await nextCounter("offer", year, db);
+  return `OF-${year}-${String(seq).padStart(4, "0")}`;
 }

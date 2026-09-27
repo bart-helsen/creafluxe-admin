@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LOGGABLE_EVENT_KINDS, MANUAL_REQUEST_STATUSES } from "@/lib/requests";
 import {
   MANUAL_ORDER_CHANNELS,
   MANUAL_ORDER_START_STATUSES,
@@ -148,15 +149,20 @@ const newCustomerSchema = z.object({
   addressCountry: optionalText,
 });
 
+/** Pick an existing customer or create a new one (manual orders & requests). */
+export const customerChoiceSchema = z.discriminatedUnion("mode", [
+  z.object({
+    mode: z.literal("existing"),
+    id: z.string().min(1, "Kies een klant."),
+  }),
+  newCustomerSchema,
+]);
+
+export type CustomerChoiceInput = z.infer<typeof customerChoiceSchema>;
+
 export const manualOrderSchema = z
   .object({
-    customer: z.discriminatedUnion("mode", [
-      z.object({
-        mode: z.literal("existing"),
-        id: z.string().min(1, "Kies een klant."),
-      }),
-      newCustomerSchema,
-    ]),
+    customer: customerChoiceSchema,
     type: z.enum(["WEBSHOP", "CUSTOM"]).default("WEBSHOP"),
     channel: z.enum(
       Object.keys(MANUAL_ORDER_CHANNELS) as [ManualOrderChannel, ...ManualOrderChannel[]],
@@ -216,3 +222,121 @@ export const orderItemsUpdateSchema = z.object({
 });
 
 export type OrderItemsUpdateInput = z.infer<typeof orderItemsUpdateSchema>;
+
+// ---------------------------------------------------------------------------
+// Custom requests (Aanvragen) entered by hand ("Nieuwe aanvraag").
+// ---------------------------------------------------------------------------
+
+const deliverySchema = z.object({
+  requested: z.boolean().default(false),
+  street: optionalText,
+  postal: optionalText,
+  city: optionalText,
+  country: optionalText,
+  notes: optionalText,
+});
+
+export const manualRequestSchema = z
+  .object({
+    customer: customerChoiceSchema,
+    channel: z.enum(
+      Object.keys(MANUAL_ORDER_CHANNELS) as [ManualOrderChannel, ...ManualOrderChannel[]],
+    ),
+    title: optionalText,
+    description: z.string().trim().min(1, "Beschrijf wat de klant vraagt."),
+    customerRemarks: optionalText,
+    delivery: deliverySchema,
+    internalNote: optionalText,
+  })
+  .superRefine((v, ctx) => {
+    if (v.customer.mode === "new" && !v.customer.email && !v.customer.phone) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Geef minstens een e-mailadres of telefoonnummer op.",
+        path: ["customer", "email"],
+      });
+    }
+    if (v.delivery.requested && (!v.delivery.street || !v.delivery.city)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Vul straat en gemeente in voor levering (of kies afhaling).",
+        path: ["delivery"],
+      });
+    }
+  });
+
+export type ManualRequestInput = z.infer<typeof manualRequestSchema>;
+
+/** Edit the brief of an existing request (after clarifications). */
+export const requestDetailsSchema = z.object({
+  title: optionalText,
+  description: z.string().trim().min(1, "De omschrijving mag niet leeg zijn."),
+  customerRemarks: optionalText,
+});
+
+/** Log a note / question / answer in the request timeline. */
+export const requestEventSchema = z.object({
+  kind: z.enum(LOGGABLE_EVENT_KINDS),
+  note: z.string().trim().min(1, "Schrijf iets in het tekstvak.").max(8000),
+});
+
+export const requestStatusSchema = z.object({
+  status: z.enum(MANUAL_REQUEST_STATUSES as [string, ...string[]]),
+  note: optionalText,
+});
+
+// ---------------------------------------------------------------------------
+// Offer editor. Lines are sent as JSON (dynamic rows). Prices arrive in the
+// mode you typed them (incl. or excl. VAT) and are stored incl. VAT, the same
+// convention as orders and invoices. Costing inputs are per piece, except
+// setupHours which is once for the whole line.
+// ---------------------------------------------------------------------------
+
+/** A non-negative decimal typed with a comma or a dot; empty → 0. */
+const decimalInput = z
+  .union([z.string(), z.number()])
+  .nullish()
+  .transform((v) => (v == null ? "" : String(v).trim().replace(",", ".")))
+  .pipe(
+    z
+      .string()
+      .regex(/^(\d+(\.\d+)?)?$/, "Ongeldig getal (gebruik bv. 1,5).")
+      .transform((v) => (v === "" ? 0 : Number(v))),
+  );
+
+export const offerLineSchema = z.object({
+  description: z.string().trim().min(1, "Elke lijn heeft een omschrijving nodig."),
+  quantity: z.coerce.number().int().positive("Aantal moet minstens 1 zijn."),
+  price: signedMoneyString,
+  vatRate: z
+    .string()
+    .regex(/^\d{1,2}(\.\d{1,2})?$/, "Ongeldig btw-tarief.")
+    .default("21"),
+  costing: z
+    .object({
+      machineId: optionalText,
+      machineMinutes: decimalInput,
+      labourHours: decimalInput,
+      setupHours: decimalInput,
+      materials: z
+        .array(z.object({ materialId: z.string().min(1), quantity: decimalInput }))
+        .default([]),
+    })
+    .nullish(),
+});
+
+export const offerSaveSchema = z.object({
+  pricesIncludeVat: z.boolean(),
+  validUntil: z
+    .string()
+    .trim()
+    .regex(/^(\d{4}-\d{2}-\d{2})?$/, "Ongeldige datum.")
+    .nullish()
+    .transform((v) => (v ? v : null)),
+  intro: optionalText,
+  terms: optionalText,
+  lines: z.array(offerLineSchema).min(1, "Een offerte heeft minstens één lijn."),
+});
+
+export type OfferSaveInput = z.infer<typeof offerSaveSchema>;
+export type OfferLineInput = z.infer<typeof offerLineSchema>;

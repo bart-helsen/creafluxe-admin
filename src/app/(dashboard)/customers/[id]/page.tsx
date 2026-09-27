@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { formatEUR, formatDate, formatDateTime } from "@/lib/money";
 import { STATUS_LABELS } from "@/server/orders/changeStatus";
 import { updateCustomerAction } from "@/lib/catalogue-actions";
+import { REQUEST_STATUS_LABELS, formatRequestNumber, requestTitle } from "@/lib/requests";
 
 export default async function CustomerDetailPage({
   params,
@@ -20,6 +21,10 @@ export default async function CustomerDetailPage({
         include: { invoice: true },
       },
       invoices: { orderBy: { createdAt: "desc" }, include: { order: true } },
+      requests: {
+        orderBy: { createdAt: "desc" },
+        include: { offers: { orderBy: { version: "desc" }, take: 1 } },
+      },
     },
   });
   if (!customer) notFound();
@@ -44,13 +49,63 @@ export default async function CustomerDetailPage({
             </span>
           </p>
         </div>
-        <Link href={`/orders/new?customer=${customer.id}`} className="btn-primary">
-          + Nieuwe bestelling
-        </Link>
+        <div className="header-actions">
+          <Link
+            href={`/requests/new?customer=${customer.id}`}
+            className="btn-ghost btn-ghost--dark"
+          >
+            + Nieuwe aanvraag
+          </Link>
+          <Link href={`/orders/new?customer=${customer.id}`} className="btn-primary">
+            + Nieuwe bestelling
+          </Link>
+        </div>
       </header>
 
       <div className="detail-grid">
         <div className="detail-main">
+          {customer.requests.length > 0 && (
+            <section className="panel">
+              <h2>Aanvragen ({customer.requests.length})</h2>
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Aanvraag</th>
+                      <th>Status</th>
+                      <th>Laatste offerte</th>
+                      <th>Datum</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {customer.requests.map((r) => (
+                      <tr key={r.id}>
+                        <td className="nowrap">
+                          <Link href={`/requests/${r.id}`} className="link-strong">
+                            {formatRequestNumber(r.requestNumber)}
+                          </Link>
+                        </td>
+                        <td>{requestTitle(r)}</td>
+                        <td>
+                          <span className={`status-pill status-pill--${r.status.toLowerCase()}`}>
+                            {REQUEST_STATUS_LABELS[r.status]}
+                          </span>
+                        </td>
+                        <td className="muted small">
+                          {r.offers[0]
+                            ? `${r.offers[0].offerNumber} · ${formatEUR(r.offers[0].total.toString())}`
+                            : "—"}
+                        </td>
+                        <td className="muted small">{formatDateTime(r.createdAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+
           <section className="panel">
             <h2>Bestellingen ({customer.orders.length})</h2>
             {customer.orders.length === 0 ? (

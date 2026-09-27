@@ -7,6 +7,7 @@ import SignOutButton from "@/components/SignOutButton";
 // (see the blueprint roadmap, doc 07).
 const NAV = [
   { href: "/", label: "Dashboard", phase: null },
+  { href: "/requests", label: "Aanvragen", phase: null },
   { href: "/orders", label: "Bestellingen", phase: null },
   { href: "/invoices", label: "Facturen", phase: null },
   { href: "/customers", label: "Klanten", phase: null },

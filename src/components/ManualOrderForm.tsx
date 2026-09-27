@@ -1,12 +1,17 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import {
   createManualOrderAction,
   type ManualOrderFormState,
 } from "@/lib/order-actions";
 import { MANUAL_ORDER_CHANNELS, type ManualOrderChannel } from "@/lib/manual-order";
+import CustomerPicker, {
+  emptyNewCustomer,
+  type NewCustomerDraft,
+  type PickerCustomer,
+} from "@/components/CustomerPicker";
 import OrderLinesEditor, {
   emptyLine,
   formatCents,
@@ -24,19 +29,7 @@ import OrderLinesEditor, {
 
 export type { PickerProduct };
 
-export interface PickerCustomer {
-  id: string;
-  name: string;
-  email: string;
-  phone: string | null;
-  companyName: string | null;
-  isBusiness: boolean;
-  vatNumber: string | null;
-  addressStreet: string | null;
-  addressPostal: string | null;
-  addressCity: string | null;
-  addressCountry: string | null;
-}
+export type { PickerCustomer };
 
 const START_STATUSES = [
   { value: "NEW", label: "Nieuw" },
@@ -63,40 +56,8 @@ export default function ManualOrderForm({
     initialCustomerId || customers.length > 0 ? "existing" : "new",
   );
   const [customerId, setCustomerId] = useState(initialCustomerId ?? "");
-  const [query, setQuery] = useState("");
-  const [newCustomer, setNewCustomer] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    isBusiness: false,
-    companyName: "",
-    vatNumber: "",
-    addressStreet: "",
-    addressPostal: "",
-    addressCity: "",
-    addressCountry: "België",
-  });
+  const [newCustomer, setNewCustomer] = useState<NewCustomerDraft>(emptyNewCustomer);
   const selectedCustomer = customers.find((c) => c.id === customerId);
-
-  const matches = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return [];
-    return customers
-      .filter((c) =>
-        [c.name, c.email, c.companyName, c.phone, c.vatNumber]
-          .filter(Boolean)
-          .some((f) => f!.toLowerCase().includes(q)),
-      )
-      .slice(0, 8);
-  }, [customers, query]);
-
-  // Warn when a "new" customer's e-mail is already known.
-  const emailTaken =
-    customerMode === "new" && newCustomer.email.trim()
-      ? customers.find(
-          (c) => c.email.toLowerCase() === newCustomer.email.trim().toLowerCase(),
-        )
-      : undefined;
 
   const setNew = (patch: Partial<typeof newCustomer>) =>
     setNewCustomer((c) => ({ ...c, ...patch }));
@@ -187,200 +148,16 @@ export default function ManualOrderForm({
         {/* ---------------- Customer ---------------- */}
         <section className="panel">
           <h2>Klant</h2>
-          <div className="segmented">
-            <button
-              type="button"
-              className={`tab ${customerMode === "existing" ? "tab--active" : ""}`}
-              onClick={() => setCustomerMode("existing")}
-            >
-              Bestaande klant
-            </button>
-            <button
-              type="button"
-              className={`tab ${customerMode === "new" ? "tab--active" : ""}`}
-              onClick={() => setCustomerMode("new")}
-            >
-              + Nieuwe klant
-            </button>
-          </div>
-
-          {customerMode === "existing" ? (
-            selectedCustomer ? (
-              <div className="picked-customer">
-                <div className="stack">
-                  <strong>{selectedCustomer.name}</strong>
-                  {selectedCustomer.companyName && (
-                    <span className="small">{selectedCustomer.companyName}</span>
-                  )}
-                  <span className="muted small">
-                    {[selectedCustomer.email, selectedCustomer.phone]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </span>
-                  {(selectedCustomer.addressStreet || selectedCustomer.addressCity) && (
-                    <span className="muted small">
-                      {[
-                        selectedCustomer.addressStreet,
-                        [selectedCustomer.addressPostal, selectedCustomer.addressCity]
-                          .filter(Boolean)
-                          .join(" "),
-                      ]
-                        .filter(Boolean)
-                        .join(", ")}
-                    </span>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  className="btn-ghost btn-ghost--dark btn-inline"
-                  onClick={() => {
-                    setCustomerId("");
-                    setQuery("");
-                  }}
-                >
-                  Andere klant
-                </button>
-              </div>
-            ) : (
-              <div className="customer-search">
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Zoek op naam, e-mail, telefoon of bedrijf"
-                  autoFocus
-                />
-                {query.trim() && (
-                  <ul className="customer-results">
-                    {matches.map((c) => (
-                      <li key={c.id}>
-                        <button type="button" onClick={() => setCustomerId(c.id)}>
-                          <strong>{c.name}</strong>
-                          {c.companyName && <span> · {c.companyName}</span>}
-                          <span className="muted small">
-                            {" "}
-                            {[c.email, c.phone].filter(Boolean).join(" · ")}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                    {matches.length === 0 && (
-                      <li className="muted small customer-results-empty">
-                        Geen klant gevonden.{" "}
-                        <button
-                          type="button"
-                          className="btn-text"
-                          onClick={() => {
-                            setCustomerMode("new");
-                            setNew(
-                              query.includes("@")
-                                ? { email: query.trim() }
-                                : { name: query.trim() },
-                            );
-                          }}
-                        >
-                          Nieuwe klant aanmaken
-                        </button>
-                      </li>
-                    )}
-                  </ul>
-                )}
-              </div>
-            )
-          ) : (
-            <div className="form-grid">
-              <label className="field">
-                Naam *
-                <input
-                  value={newCustomer.name}
-                  onChange={(e) => setNew({ name: e.target.value })}
-                  placeholder="Voor- en achternaam"
-                />
-              </label>
-              <label className="field">
-                Telefoon
-                <input
-                  value={newCustomer.phone}
-                  onChange={(e) => setNew({ phone: e.target.value })}
-                  inputMode="tel"
-                />
-              </label>
-              <label className="field form-col-2">
-                E-mail
-                <input
-                  type="email"
-                  value={newCustomer.email}
-                  onChange={(e) => setNew({ email: e.target.value })}
-                  placeholder="Optioneel als je een telefoonnummer hebt"
-                />
-                {emailTaken && (
-                  <span className="hint">
-                    Dit e-mailadres hoort al bij <strong>{emailTaken.name}</strong> — de
-                    bestelling wordt aan die klant gekoppeld.{" "}
-                    <button
-                      type="button"
-                      className="btn-text"
-                      onClick={() => {
-                        setCustomerMode("existing");
-                        setCustomerId(emailTaken.id);
-                      }}
-                    >
-                      Die klant kiezen
-                    </button>
-                  </span>
-                )}
-              </label>
-              <label className="check-field form-col-2">
-                <input
-                  type="checkbox"
-                  checked={newCustomer.isBusiness}
-                  onChange={(e) => setNew({ isBusiness: e.target.checked })}
-                />
-                Onderneming (factuur op bedrijfsnaam)
-              </label>
-              {newCustomer.isBusiness && (
-                <>
-                  <label className="field">
-                    Bedrijfsnaam
-                    <input
-                      value={newCustomer.companyName}
-                      onChange={(e) => setNew({ companyName: e.target.value })}
-                    />
-                  </label>
-                  <label className="field">
-                    Btw-nummer
-                    <input
-                      value={newCustomer.vatNumber}
-                      onChange={(e) => setNew({ vatNumber: e.target.value })}
-                      placeholder="BE0123456789"
-                    />
-                  </label>
-                </>
-              )}
-              <label className="field form-col-2">
-                Straat + nr
-                <input
-                  value={newCustomer.addressStreet}
-                  onChange={(e) => setNew({ addressStreet: e.target.value })}
-                  placeholder="Optioneel"
-                />
-              </label>
-              <label className="field">
-                Postcode
-                <input
-                  value={newCustomer.addressPostal}
-                  onChange={(e) => setNew({ addressPostal: e.target.value })}
-                />
-              </label>
-              <label className="field">
-                Gemeente
-                <input
-                  value={newCustomer.addressCity}
-                  onChange={(e) => setNew({ addressCity: e.target.value })}
-                />
-              </label>
-            </div>
-          )}
+          <CustomerPicker
+            customers={customers}
+            mode={customerMode}
+            onModeChange={setCustomerMode}
+            customerId={customerId}
+            onCustomerIdChange={setCustomerId}
+            newCustomer={newCustomer}
+            onNewCustomerChange={setNew}
+            subject="bestelling"
+          />
         </section>
 
         {/* ---------------- Items ---------------- */}
@@ -527,6 +304,15 @@ export default function ManualOrderForm({
                 <option value="WEBSHOP">Catalogusproducten</option>
                 <option value="CUSTOM">Maatwerk (atelier)</option>
               </select>
+              {type === "CUSTOM" && (
+                <span className="hint">
+                  Nog geen prijs afgesproken?{" "}
+                  <Link href="/requests/new" className="link-strong">
+                    Maak een aanvraag
+                  </Link>{" "}
+                  en werk met een offerte.
+                </span>
+              )}
             </label>
             <label className="field">
               Startstatus

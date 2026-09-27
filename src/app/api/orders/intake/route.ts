@@ -3,11 +3,15 @@ import { checkApiKey } from "@/lib/apiAuth";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { intakeSchema } from "@/lib/validation";
 import { createOrder } from "@/server/orders/createOrder";
+import { createRequestFromIntake } from "@/server/requests/createRequest";
 
 // POST /api/orders/intake — the single endpoint that replaces the order emails
 // (docs/04 §A, Flow 1). The website posts the cart/design request here with a
-// shared X-Api-Key. We validate, re-price server-side, persist, and fire the
-// automation chain (draft invoice + notification).
+// shared X-Api-Key. We validate, then:
+//   - type WEBSHOP → an Order (re-priced server-side, draft invoice, e-mail)
+//   - type CUSTOM  → a custom request (Aanvraag) — no order until you've made
+//                    an offer and the customer accepted it.
+// The URL stays the same so the website needs no change.
 
 // This route uses Prisma/Node APIs — force the Node.js runtime, not Edge.
 export const runtime = "nodejs";
@@ -51,10 +55,25 @@ export async function POST(req: Request) {
   }
 
   try {
+    if (parsed.data.type === "CUSTOM") {
+      const result = await createRequestFromIntake(parsed.data);
+      return NextResponse.json(
+        {
+          ok: true,
+          kind: "request",
+          requestId: result.requestId,
+          requestNumber: result.requestNumber,
+          duplicate: result.duplicate,
+        },
+        { status: result.duplicate ? 200 : 201 },
+      );
+    }
+
     const result = await createOrder(parsed.data);
     return NextResponse.json(
       {
         ok: true,
+        kind: "order",
         orderId: result.orderId,
         orderNumber: result.orderNumber,
         duplicate: result.duplicate,

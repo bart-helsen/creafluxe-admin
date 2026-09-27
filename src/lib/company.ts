@@ -26,3 +26,23 @@ export function companyAddressLines(): string[] {
     company.addressCountry,
   ].filter((l) => l && l.trim().length > 0);
 }
+
+// Defaults for new offers (Offertes). The texts are pre-filled on every new
+// offer and can be changed per offer before you send it.
+export const offerDefaults = {
+  /** Days an offer stays valid, used to pre-fill "Geldig tot". */
+  validityDays: Number(process.env.OFFER_VALIDITY_DAYS ?? "30"),
+  terms:
+    process.env.OFFER_TERMS ??
+    [
+      "Levertermijn: ± 1 week voor kleine opdrachten, 2 à 3 weken voor grotere opdrachten, te rekenen vanaf je akkoord.",
+      "Afhaling in ons atelier, of levering tegen de vermelde kost.",
+      "Akkoord? Bevestig deze offerte per e-mail of stuur ze ondertekend terug.",
+    ].join("\n"),
+};
+
+/** The default greeting above the offer lines. */
+export function defaultOfferIntro(customerName: string): string {
+  const first = customerName.trim().split(/\s+/)[0] || customerName;
+  return `Beste ${first},\n\nBedankt voor je aanvraag. Hieronder vind je onze prijsofferte.`;
+}
