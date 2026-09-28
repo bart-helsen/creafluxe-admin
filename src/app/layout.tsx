@@ -8,6 +8,12 @@ export const metadata: Metadata = {
   },
   description: "Creafluxe administration software.",
   robots: { index: false, follow: false },
+  // Admin-specific tab icon: the Creafluxe "C" with a gear badge, so it is
+  // distinguishable from the public website (which uses the plain logo).
+  icons: {
+    icon: [{ url: "/admin-favicon.ico", sizes: "any" }, { url: "/admin-icon.png", type: "image/png", sizes: "512x512" }],
+    apple: "/admin-icon.png",
+  },
 };
 
 export default function RootLayout({
