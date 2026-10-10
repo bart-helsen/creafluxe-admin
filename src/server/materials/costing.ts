@@ -201,7 +201,15 @@ export interface ProductBuildCost {
   roundedPriceIncl: string; // suggestedPriceIncl rounded to the nearest whole euro
   finalPrice: string | null; // your final price, EXCL. VAT (derived from the mode)
   finalPriceIncl: string | null; // your final price, INCL. VAT
-  margin: string | null; // finalPrice(excl) − totalCost
+  /**
+   * Opbrengst: finalPrice(excl) − machineCost − materialCost. What the job really
+   * earns you before tax and social contributions — your own time is NOT deducted
+   * (as a sole proprietor, that time is your pay).
+   */
+  earnings: string | null;
+  earningsPercent: string | null; // earnings as % of the final net (excl.) price
+  /** Marge na uren: finalPrice(excl) − totalCost, i.e. earnings above your own hourly rate. */
+  margin: string | null;
   marginPercent: string | null; // margin as % of the final net (excl.) price
 }
 
@@ -319,6 +327,14 @@ export async function computeProductBuildCost(
     finalExcl && finalExcl.gt(0)
       ? margin!.div(finalExcl).mul(100).toDecimalPlaces(1).toString()
       : null;
+  // Earnings before your own time: price − machine − material.
+  const earnings = finalExcl
+    ? money(finalExcl.sub(machineCost).sub(materialCost))
+    : null;
+  const earningsPercent =
+    finalExcl && finalExcl.gt(0)
+      ? earnings!.div(finalExcl).mul(100).toDecimalPlaces(1).toString()
+      : null;
 
   return {
     machine,
@@ -338,6 +354,8 @@ export async function computeProductBuildCost(
     roundedPriceIncl: roundedIncl.toFixed(2),
     finalPrice: finalExcl ? finalExcl.toFixed(2) : null,
     finalPriceIncl: finalIncl ? finalIncl.toFixed(2) : null,
+    earnings: earnings ? earnings.toFixed(2) : null,
+    earningsPercent,
     margin: margin ? margin.toFixed(2) : null,
     marginPercent,
   };

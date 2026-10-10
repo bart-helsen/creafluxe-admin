@@ -72,7 +72,25 @@ export function computeOfferLineCost(input: OfferCostInput): OfferCostResult {
   };
 }
 
-/** Margin of a chosen net (excl. VAT) unit price over the unit cost. */
+/**
+ * Opbrengst: net unit price minus machine and material cost only. Your own time
+ * (labour + setup) is not deducted — as a sole proprietor that time is your pay.
+ */
+export function offerEarnings(
+  unitPriceExcl: number,
+  machineCost: number,
+  materialCost: number,
+): { earnings: number; percent: number | null } {
+  const earnings = round2(unitPriceExcl - machineCost - materialCost);
+  const percent =
+    unitPriceExcl > 0 ? Math.round((earnings / unitPriceExcl) * 1000) / 10 : null;
+  return { earnings, percent };
+}
+
+/**
+ * "Marge na uren": margin of a chosen net (excl. VAT) unit price over the unit
+ * cost, where the unit cost includes your own hours at your hourly rate.
+ */
 export function offerMargin(
   unitPriceExcl: number,
   unitCost: number,

@@ -256,7 +256,7 @@ export default async function OfferPage({ params }: { params: Promise<{ id: stri
                                 {formatEUR(l.unitCost.toString())}
                                 {m && (
                                   <div className={`small ${m.margin < 0 ? "stock-low" : "muted"}`}>
-                                    marge {formatEUR(m.margin)}
+                                    marge na uren {formatEUR(m.margin)}
                                     {m.percent != null ? ` (${m.percent}%)` : ""}
                                   </div>
                                 )}

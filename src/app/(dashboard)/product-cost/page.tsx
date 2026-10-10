@@ -265,7 +265,7 @@ export default async function ProductCostPage({
                     <span>{formatEUR(result.totalCost)}</span>
                   </div>
                   <div className="totals-line">
-                    <span>Richtprijs (+{result.markupPercent}% marge)</span>
+                    <span>Richtprijs (+{result.markupPercent}% opslag)</span>
                     <span>
                       {formatEUR(result.suggestedPrice)}
                       <span className="muted small">
@@ -297,7 +297,19 @@ export default async function ProductCostPage({
                       <span>{formatEUR(result.finalPriceIncl!)}</span>
                     </div>
                     <div className="totals-line">
-                      <span>Marge (op nettoprijs)</span>
+                      <span>Opbrengst (prijs − machine − materiaal)</span>
+                      <span
+                        className={
+                          Number(result.earnings) < 0 ? "stock-low" : undefined
+                        }
+                      >
+                        {formatEUR(result.earnings!)}
+                        {result.earningsPercent != null &&
+                          ` (${result.earningsPercent}%)`}
+                      </span>
+                    </div>
+                    <div className="totals-line">
+                      <span>Marge na uren (boven je uurloon)</span>
                       <span
                         className={
                           Number(result.margin) < 0 ? "stock-low" : undefined
@@ -312,7 +324,10 @@ export default async function ProductCostPage({
                 )}
 
                 <p className="muted small">
-                  Kostprijs en marge zijn excl. btw. Je koos je eindprijs{" "}
+                  Kostprijs, opbrengst en marge zijn excl. btw. Opbrengst is wat de
+                  job je werkelijk oplevert vóór belastingen en sociale bijdragen;
+                  marge na uren is wat overblijft nadat je eigen uren aan je
+                  uurloon zijn betaald. Je koos je eindprijs{" "}
                   {finalPriceInclVat ? "incl." : "excl."} btw; beide bedragen
                   staan hierboven.
                 </p>

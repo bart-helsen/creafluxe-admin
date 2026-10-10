@@ -7,6 +7,7 @@ import {
   computeOfferLineCost,
   exclFromIncl,
   inclFromExcl,
+  offerEarnings,
   offerMargin,
   round2,
   type OfferCostResult,
@@ -150,6 +151,10 @@ export default function OfferEditor({
       lineIncl: round2(unitIncl * (valid ? qty : 0)),
       cost,
       margin: cost && valid ? offerMargin(unitExcl, cost.unitCost) : null,
+      earnings:
+        cost && valid
+          ? offerEarnings(unitExcl, cost.machineCost, cost.materialCost)
+          : null,
     };
   });
 
@@ -163,6 +168,15 @@ export default function OfferEditor({
   const costed = figures.filter((f) => f.cost);
   const costTotal = round2(costed.reduce((s, f) => s + (f.cost?.lineCost ?? 0), 0));
   const costedNet = round2(costed.reduce((s, f) => s + f.unitExcl * f.qty, 0));
+  const earningsTotal = round2(
+    costed.reduce(
+      (s, f) =>
+        s +
+        f.unitExcl * f.qty -
+        ((f.cost?.machineCost ?? 0) + (f.cost?.materialCost ?? 0)) * f.qty,
+      0,
+    ),
+  );
   const invalidLine = figures.some((f, i) => !f.valid && lines[i].description.trim() !== "");
 
   // ---- Payload ------------------------------------------------------------------
@@ -485,9 +499,18 @@ export default function OfferEditor({
                               Afgerond {fmt(suggested!.rounded)}
                             </button>
                           </div>
+                          {f.earnings && f.unitExcl !== 0 && (
+                            <div className="totals-line">
+                              <span>Opbrengst (prijs − machine − materiaal)</span>
+                              <span className={f.earnings.earnings < 0 ? "stock-low" : undefined}>
+                                {fmt(f.earnings.earnings)}/stuk
+                                {f.earnings.percent != null ? ` (${f.earnings.percent}%)` : ""}
+                              </span>
+                            </div>
+                          )}
                           {f.margin && f.unitExcl !== 0 && (
                             <div className="totals-line">
-                              <span>Marge op jouw prijs</span>
+                              <span>Marge na uren op jouw prijs</span>
                               <span className={f.margin.margin < 0 ? "stock-low" : undefined}>
                                 {fmt(f.margin.margin)}/stuk
                                 {f.margin.percent != null ? ` (${f.margin.percent}%)` : ""}
@@ -597,7 +620,13 @@ export default function OfferEditor({
                   <span>{fmt(costTotal)}</span>
                 </div>
                 <div className="totals-line">
-                  <span>Marge (excl. btw)</span>
+                  <span>Opbrengst (excl. btw)</span>
+                  <span className={earningsTotal < 0 ? "stock-low" : undefined}>
+                    {fmt(earningsTotal)}
+                  </span>
+                </div>
+                <div className="totals-line">
+                  <span>Marge na uren (excl. btw)</span>
                   <span className={costedNet - costTotal < 0 ? "stock-low" : undefined}>
                     {fmt(round2(costedNet - costTotal))}
                   </span>

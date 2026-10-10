@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { computeOfferLineCost, exclFromIncl, inclFromExcl, offerMargin } from "./offer-cost";
+import {
+  computeOfferLineCost,
+  exclFromIncl,
+  inclFromExcl,
+  offerEarnings,
+  offerMargin,
+} from "./offer-cost";
 
 // Offer-line costing: the same sum the editor shows live and the server stores.
 
@@ -76,5 +82,12 @@ describe("VAT helpers + margin", () => {
     expect(offerMargin(50, 30)).toEqual({ margin: 20, percent: 40 });
     expect(offerMargin(20, 25)).toEqual({ margin: -5, percent: -25 });
     expect(offerMargin(0, 5).percent).toBeNull();
+  });
+
+  it("reports earnings before your own time (price − machine − material)", () => {
+    // Same piece as above: 0.60 machine + 5.00 material, labour excluded.
+    expect(offerEarnings(45, 0.6, 5)).toEqual({ earnings: 39.4, percent: 87.6 });
+    expect(offerEarnings(4, 0.6, 5).earnings).toBe(-1.6);
+    expect(offerEarnings(0, 1, 1).percent).toBeNull();
   });
 });

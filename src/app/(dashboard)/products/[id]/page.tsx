@@ -379,7 +379,7 @@ export default async function ProductDetailPage({
                   <span>{formatEUR(buildCost.totalCost)}</span>
                 </div>
                 <div className="totals-line">
-                  <span>Richtprijs (+{buildCost.markupPercent}% marge)</span>
+                  <span>Richtprijs (+{buildCost.markupPercent}% opslag)</span>
                   <span>
                     {formatEUR(buildCost.suggestedPrice)}
                     <span className="muted small">
