@@ -17,7 +17,7 @@ import {
   isR2Configured,
   buildCustomKey,
   putObject,
-  ALLOWED_UPLOAD_MIME,
+  resolveUploadMime,
   MAX_UPLOAD_BYTES,
 } from "@/lib/r2";
 import { createManualRequest } from "@/server/requests/createRequest";
@@ -192,9 +192,9 @@ export async function uploadRequestFileAction(
     return { error: "Bestandsopslag (R2) is niet geconfigureerd — kan geen bestand opslaan." };
   }
   if (file.size > MAX_UPLOAD_BYTES) return { error: "Bestand is groter dan 10 MB." };
-  const mimeType = file.type || "application/octet-stream";
-  if (!ALLOWED_UPLOAD_MIME.has(mimeType)) {
-    return { error: `Bestandstype niet toegestaan: ${mimeType}.` };
+  const mimeType = resolveUploadMime(file.name, file.type);
+  if (!mimeType) {
+    return { error: `Bestandstype niet toegestaan: ${file.type || file.name}.` };
   }
 
   try {

@@ -14,6 +14,10 @@ export interface OrderDesignFile {
   fileName: string;
   storageKey: string;
   downloadUrl: string | null; // null when R2 isn't configured
+  // "product": a catalogue master shared by every order of that product (managed
+  // on the product page). "item": a file attached to this order item itself,
+  // which can be kept as a master or removed from the order.
+  source: "product" | "item";
 }
 
 export interface OrderItemDesigns {
@@ -58,19 +62,22 @@ export async function gatherOrderDesigns(
           fileName: m.fileName,
           storageKey: m.storageKey,
           downloadUrl: r2On ? await presignDownload(m.storageKey) : null,
+          source: "product",
         });
       }
     }
 
-    // Custom uploads for this line.
+    // Files attached to this line: customer uploads, plus any the owner has
+    // kept as a master (kind MASTER without a product).
     for (const cu of item.customDesigns) {
       files.push({
         id: cu.id,
-        kind: "CUSTOM",
+        kind: cu.kind,
         label: cu.label ?? cu.fileName,
         fileName: cu.fileName,
         storageKey: cu.storageKey,
         downloadUrl: r2On ? await presignDownload(cu.storageKey) : null,
+        source: "item",
       });
     }
 

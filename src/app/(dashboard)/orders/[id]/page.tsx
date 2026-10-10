@@ -14,6 +14,8 @@ import {
 import { channelLabel } from "@/lib/manual-order";
 import { formatRequestNumber } from "@/lib/requests";
 import OrderEditPanel from "@/components/OrderEditPanel";
+import OrderItemFiles from "@/components/OrderItemFiles";
+import { isR2Configured } from "@/lib/r2";
 import type { Line, PickerProduct } from "@/components/OrderLinesEditor";
 
 export default async function OrderDetailPage({
@@ -43,6 +45,7 @@ export default async function OrderDetailPage({
   if (!order) notFound();
 
   const designs = await gatherOrderDesigns(order.id);
+  const r2On = isR2Configured();
 
   // Catalogue for the "Bestelling bewerken" panel: active products plus any
   // (possibly inactive) product this order already uses.
@@ -167,27 +170,11 @@ export default async function OrderDetailPage({
                       </div>
                     </div>
                   </div>
-                  <div className="files">
-                    {files.length === 0 && (
-                      <span className="muted small">
-                        Geen ontwerpbestanden gekoppeld.
-                      </span>
-                    )}
-                    {files.map((f) => (
-                      <span key={f.id} className="file-chip">
-                        <span className="file-kind">
-                          {f.kind === "MASTER" ? "MASTER" : "UPLOAD"}
-                        </span>
-                        {f.downloadUrl ? (
-                          <a href={f.downloadUrl} target="_blank" rel="noreferrer">
-                            {f.label}
-                          </a>
-                        ) : (
-                          <span title={f.storageKey}>{f.label}</span>
-                        )}
-                      </span>
-                    ))}
-                  </div>
+                  <OrderItemFiles
+                    orderItemId={it.id}
+                    files={files}
+                    uploadEnabled={r2On}
+                  />
                 </div>
               );
             })}

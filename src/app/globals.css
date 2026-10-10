@@ -801,6 +801,21 @@ a.btn-primary {
   width: auto;
 }
 
+/* A checkbox inside an inline form must not inherit the text-input sizing above,
+   otherwise it becomes a wide empty box far away from its label. */
+.inline-form .check-field {
+  flex-basis: 100%;
+}
+
+.inline-form .check-field input[type="checkbox"] {
+  min-width: 0;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin: 0;
+  flex: none;
+}
+
 /* Danger / delete row action */
 .row-action {
   text-align: right;
