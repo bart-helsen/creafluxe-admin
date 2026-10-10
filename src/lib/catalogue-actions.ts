@@ -11,9 +11,10 @@ import {
   isR2Configured,
   buildMasterKey,
   putObject,
-  ALLOWED_UPLOAD_MIME,
+  resolveUploadMime,
   MAX_UPLOAD_BYTES,
 } from "@/lib/r2";
+import type { ActionState } from "@/components/ActionForm";
 
 // Belgian standard VAT. The cost calculator works excl. VAT, but the catalogue
 // basePrice is stored incl. VAT, so a promoted price is grossed up by this.
@@ -233,45 +234,65 @@ export async function deleteOptionAction(formData: FormData): Promise<void> {
 // Master design files — uploaded through the server action straight to R2.
 // ---------------------------------------------------------------------------
 
-export async function uploadMasterAction(formData: FormData): Promise<void> {
-  await requireUserId();
+// Returns { error } / { success } instead of throwing: a thrown error in a
+// production server action shows up as a bare 500 + React error #441 with no
+// readable message.
+export async function uploadMasterAction(
+  _prev: ActionState | undefined,
+  formData: FormData,
+): Promise<ActionState> {
+  if (!(await auth())?.user?.id) {
+    return { error: "Je bent niet (meer) aangemeld." };
+  }
   const productId = str(formData, "productId");
   const file = formData.get("file");
-  if (!productId) throw new Error("Onbekend product.");
+  if (!productId) return { error: "Onbekend product." };
   if (!(file instanceof File) || file.size === 0) {
-    throw new Error("Kies een bestand om te uploaden.");
+    return { error: "Kies een bestand om te uploaden." };
   }
   if (!isR2Configured()) {
-    throw new Error(
-      "Bestandsopslag (R2) is niet geconfigureerd — kan geen masterbestand uploaden.",
-    );
+    return {
+      error:
+        "Bestandsopslag (R2) is niet geconfigureerd — kan geen masterbestand uploaden.",
+    };
   }
   if (file.size > MAX_UPLOAD_BYTES) {
-    throw new Error("Bestand is groter dan 10 MB.");
+    return { error: "Bestand is groter dan 10 MB." };
   }
-  const mimeType = file.type || "application/octet-stream";
-  if (!ALLOWED_UPLOAD_MIME.has(mimeType)) {
-    throw new Error(`Bestandstype niet toegestaan: ${mimeType}.`);
+  const mimeType = resolveUploadMime(
+    file.name,
+    file.type || "application/octet-stream",
+  );
+  if (!mimeType) {
+    return {
+      error: `Bestandstype niet toegestaan: ${file.name}. Toegelaten: SVG, DXF, DWG, AI, EPS, PDF, PNG, JPG, XS.`,
+    };
   }
 
-  const storageKey = buildMasterKey(file.name);
-  const bytes = Buffer.from(await file.arrayBuffer());
-  await putObject(storageKey, bytes, mimeType);
+  try {
+    const storageKey = buildMasterKey(file.name);
+    const bytes = Buffer.from(await file.arrayBuffer());
+    await putObject(storageKey, bytes, mimeType);
 
-  await prisma.designAsset.create({
-    data: {
-      kind: "MASTER",
-      label: optStr(formData, "label") ?? file.name,
-      storageKey,
-      fileName: file.name,
-      mimeType,
-      sizeBytes: file.size,
-      productId,
-      designValue: optStr(formData, "designValue"),
-    },
-  });
+    await prisma.designAsset.create({
+      data: {
+        kind: "MASTER",
+        label: optStr(formData, "label") ?? file.name,
+        storageKey,
+        fileName: file.name,
+        mimeType,
+        sizeBytes: file.size,
+        productId,
+        designValue: optStr(formData, "designValue"),
+      },
+    });
+  } catch (err) {
+    console.error("uploadMasterAction failed", err);
+    return { error: "Het bestand kon niet opgeslagen worden. Controleer de R2-instellingen en probeer opnieuw." };
+  }
 
   revalidatePath(`/products/${productId}`);
+  return { success: `${file.name} is geüpload.` };
 }
 
 export async function deleteMasterAction(formData: FormData): Promise<void> {

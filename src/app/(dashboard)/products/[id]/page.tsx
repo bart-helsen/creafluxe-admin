@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ProductOptionType } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import ActionForm, { SubmitButton } from "@/components/ActionForm";
 import { formatEUR, formatDateTime } from "@/lib/money";
 import { formatPerMinute } from "@/lib/machine-cost";
 import { isR2Configured, presignDownload } from "@/lib/r2";
@@ -465,7 +466,11 @@ export default async function ProductDetailPage({
             )}
 
             {r2 ? (
-              <form action={uploadMasterAction} className="stack-form">
+              <ActionForm
+                action={uploadMasterAction}
+                className="stack-form"
+                resetOnSuccess
+              >
                 <input type="hidden" name="productId" value={product.id} />
                 <input type="file" name="file" required />
                 <input name="label" placeholder="Label (optioneel)" />
@@ -473,10 +478,13 @@ export default async function ProductDetailPage({
                   name="designValue"
                   placeholder="Koppel aan ontwerp-optie (optioneel)"
                 />
-                <button type="submit" className="btn-ghost btn-ghost--dark">
+                <SubmitButton
+                  className="btn-ghost btn-ghost--dark"
+                  pendingLabel="Uploaden…"
+                >
                   Masterbestand uploaden
-                </button>
-              </form>
+                </SubmitButton>
+              </ActionForm>
             ) : (
               <p className="muted small">
                 Bestandsopslag (R2) is niet geconfigureerd — stel R2 in om

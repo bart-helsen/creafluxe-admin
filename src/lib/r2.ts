@@ -60,6 +60,36 @@ export const ALLOWED_UPLOAD_MIME = new Set([
 
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
 
+/**
+ * Browsers often report an empty or generic MIME type for design files (.dxf,
+ * .ai, .eps, xTool .xs, ...), so the type alone would reject legitimate files.
+ * Fall back to the file extension for those.
+ */
+const EXTENSION_MIME: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  pdf: "application/pdf",
+  svg: "image/svg+xml",
+  ai: "application/postscript",
+  eps: "application/postscript",
+  dxf: "application/dxf",
+  dwg: "application/acad",
+  xs: "application/octet-stream", // xTool Studio project
+};
+
+/**
+ * The MIME type to store for an uploaded design file, or null when neither the
+ * browser-reported type nor the extension is an allowed one.
+ */
+export function resolveUploadMime(fileName: string, reported: string): string | null {
+  if (ALLOWED_UPLOAD_MIME.has(reported)) return reported;
+  const ext = fileName.includes(".")
+    ? fileName.split(".").pop()!.toLowerCase()
+    : "";
+  return EXTENSION_MIME[ext] ?? null;
+}
+
 /** Showcase sample photos are images only (no vector/CAD formats). */
 export const ALLOWED_SAMPLE_MIME = new Set([
   "image/jpeg",
