@@ -37,6 +37,20 @@ export interface InvoiceTotals {
 }
 
 /**
+ * Net (excl. VAT) price per unit, for display next to the VAT-inclusive line
+ * total. Stored prices stay as they are; this is only the shown figure.
+ */
+export function netUnitPrice(
+  unitPrice: Prisma.Decimal | string | number,
+  vatRate: Prisma.Decimal | string | number,
+): string {
+  const price = toDecimal(unitPrice);
+  if (!PRICES_INCLUDE_VAT) return money(price).toFixed(2);
+  const rate = toDecimal(vatRate);
+  return money(price.div(toDecimal(1).add(rate.div(100)))).toFixed(2);
+}
+
+/**
  * Compute authoritative invoice totals from line inputs. VAT is computed per
  * rate on the summed base (the standard method) so rounding happens once per
  * rate, and subtotal + vatAmount always equals total.

@@ -1,7 +1,7 @@
 import PDFDocument from "pdfkit";
 import { company, companyAddressLines } from "@/lib/company";
 import { formatDate } from "@/lib/money";
-import { computeInvoiceTotals } from "@/server/invoices/invoiceMath";
+import { computeInvoiceTotals, netUnitPrice } from "@/server/invoices/invoiceMath";
 import {
   COLOR,
   LOGO_ASPECT,
@@ -77,7 +77,7 @@ export function buildOfferPdf(data: OfferPdfData): Promise<Buffer> {
     const right = 545;
     const width = right - left;
     const bottom = 770;
-    const cols = { desc: left, qty: 340, unit: 400, vat: 465, total: right };
+    const cols = { desc: left, qty: 290, unit: 335, vat: 425, total: right };
 
     const ensureSpace = (y: number, needed: number) => {
       if (y + needed <= bottom) return y;
@@ -95,9 +95,9 @@ export function buildOfferPdf(data: OfferPdfData): Promise<Buffer> {
         .stroke();
       doc.font("Manrope-semibold").fontSize(8.5).fillColor(COLOR.gray);
       const o = { characterSpacing: 0.6 };
-      doc.text("OMSCHRIJVING", cols.desc + 4, ty, { width: 280, ...o });
-      doc.text("AANTAL", cols.qty, ty, { width: 50, align: "right", ...o });
-      doc.text("PRIJS", cols.unit, ty, { width: 55, align: "right", ...o });
+      doc.text("OMSCHRIJVING", cols.desc + 4, ty, { width: 230, ...o });
+      doc.text("AANTAL", cols.qty, ty, { width: 40, align: "right", ...o });
+      doc.text("PRIJS EXCL. BTW", cols.unit, ty, { width: 85, align: "right", ...o });
       doc.text("BTW", cols.vat, ty, { width: 35, align: "right", ...o });
       doc.text("TOTAAL", cols.total - 70, ty, { width: 70, align: "right", ...o });
       return ty + 26;
@@ -203,17 +203,17 @@ export function buildOfferPdf(data: OfferPdfData): Promise<Buffer> {
     let ty = drawTableHeader(y + 6);
     doc.font("Manrope-regular").fontSize(9.5).fillColor(COLOR.gray);
     for (const line of data.lines) {
-      const h = Math.max(16, doc.heightOfString(line.description, { width: 280 }) + 6);
+      const h = Math.max(16, doc.heightOfString(line.description, { width: 230 }) + 6);
       if (ty + h > bottom - 40) {
         doc.addPage();
         ty = drawTableHeader(60);
         doc.font("Manrope-regular").fontSize(9.5).fillColor(COLOR.gray);
       }
-      doc.fillColor(COLOR.gray).text(line.description, cols.desc + 4, ty, { width: 280 });
+      doc.fillColor(COLOR.gray).text(line.description, cols.desc + 4, ty, { width: 230 });
       doc.fillColor(COLOR.inkMuted);
-      doc.text(String(line.quantity), cols.qty, ty, { width: 50, align: "right" });
-      doc.text(eur(line.unitPrice), cols.unit, ty, {
-        width: 55,
+      doc.text(String(line.quantity), cols.qty, ty, { width: 40, align: "right" });
+      doc.text(eur(netUnitPrice(line.unitPrice, line.vatRate)), cols.unit, ty, {
+        width: 85,
         align: "right",
       });
       doc.text(`${Number(line.vatRate)}%`, cols.vat, ty, { width: 35, align: "right" });
