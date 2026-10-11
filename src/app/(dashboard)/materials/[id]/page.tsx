@@ -1,3 +1,4 @@
+import FileInput from "@/components/FileInput";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -266,9 +267,8 @@ export default async function MaterialDetailPage({
               </label>
               <label className="field">
                 Foto (JPG, PNG of WebP)
-                <input
+                <FileInput
                   name="file"
-                  type="file"
                   accept="image/jpeg,image/png,image/webp"
                   required
                 />

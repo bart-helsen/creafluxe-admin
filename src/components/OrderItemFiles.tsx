@@ -1,3 +1,4 @@
+import FileInput from "@/components/FileInput";
 import ActionForm, { SubmitButton } from "@/components/ActionForm";
 import {
   deleteOrderItemFileAction,
@@ -70,7 +71,7 @@ export default function OrderItemFiles({
       {uploadEnabled ? (
         <ActionForm action={uploadOrderItemFileAction} className="inline-form" resetOnSuccess>
           <input type="hidden" name="orderItemId" value={orderItemId} />
-          <input type="file" name="file" required />
+          <FileInput name="file" required />
           <input name="label" placeholder="Omschrijving (optioneel)" />
           <label className="check-field">
             <input type="checkbox" name="asMaster" />

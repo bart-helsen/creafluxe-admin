@@ -1489,3 +1489,85 @@ button.tab {
 .data-table .status-pill {
   white-space: nowrap;
 }
+
+/* ---------- File picker (replaces the browser's grey "Choose File") ---------- */
+.file-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 4px 12px 4px 4px;
+  border: 1px dashed var(--line-hover);
+  border-radius: var(--radius);
+  background: #fff;
+  font-size: 14px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.file-picker:hover {
+  border-color: var(--accent);
+  background: var(--bg);
+}
+
+.file-picker:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(229, 98, 46, 0.18);
+}
+
+.file-picker.has-file {
+  border-style: solid;
+  color: var(--ink);
+}
+
+/* The real input stays in the form (so `required` and resets work) but is
+   visually hidden; the picker itself handles the click and the cursor. */
+.file-picker input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  pointer-events: none;
+}
+
+.file-picker > span {
+  cursor: pointer;
+}
+
+.file-picker-button {
+  flex: none;
+  padding: 6px 12px;
+  border-radius: calc(var(--radius) - 3px);
+  background: var(--brand);
+  color: var(--brand-ink);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+
+.file-picker:hover .file-picker-button {
+  background: var(--accent);
+}
+
+.file-picker-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stack-form .file-picker,
+.field .file-picker {
+  display: flex;
+  width: 100%;
+}

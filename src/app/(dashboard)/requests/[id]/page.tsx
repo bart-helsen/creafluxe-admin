@@ -1,3 +1,4 @@
+import FileInput from "@/components/FileInput";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
@@ -242,7 +243,7 @@ export default async function RequestDetailPage({
               (r2On ? (
                 <ActionForm action={uploadRequestFileAction} className="inline-form" resetOnSuccess>
                   <input type="hidden" name="requestId" value={request.id} />
-                  <input type="file" name="file" required />
+                  <FileInput name="file" required />
                   <input name="label" placeholder="Omschrijving (optioneel)" />
                   <SubmitButton className="btn-ghost btn-ghost--dark" pendingLabel="Uploaden…">
                     Uploaden

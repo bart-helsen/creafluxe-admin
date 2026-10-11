@@ -1,3 +1,4 @@
+import FileInput from "@/components/FileInput";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ProductOptionType } from "@prisma/client";
@@ -472,7 +473,7 @@ export default async function ProductDetailPage({
                 resetOnSuccess
               >
                 <input type="hidden" name="productId" value={product.id} />
-                <input type="file" name="file" required />
+                <FileInput name="file" required />
                 <input name="label" placeholder="Label (optioneel)" />
                 <input
                   name="designValue"
