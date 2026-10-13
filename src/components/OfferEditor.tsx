@@ -552,7 +552,7 @@ export default function OfferEditor({
             korting). De kostprijs gebruikt de huidige materiaal- en machinekosten en je uurloon
             van {fmt(hourlyRate)}.
             {!pricesIncludeVat &&
-              " Prijzen worden net als bij bestellingen incl. btw bewaard (per stuk op de cent afgerond); de offerte-PDF toont de prijzen incl. btw met het subtotaal excl. btw eronder."}
+              " Prijzen worden net als bij bestellingen incl. btw bewaard (per stuk op de cent afgerond); de offerte-PDF toont per lijn de prijs per stuk excl. btw, het btw-percentage en het lijntotaal incl. btw."}
           </p>
         </section>
 

@@ -234,7 +234,7 @@ export function buildOfferPdf(data: OfferPdfData): Promise<Buffer> {
       doc.font("Manrope-regular").fontSize(9.5).fillColor(COLOR.gray);
     }
     doc.font("Manrope-regular").fontSize(8).fillColor(COLOR.inkMuted);
-    doc.text("Prijzen per stuk en lijntotalen incl. btw.", left + 4, ty + 2);
+    doc.text("Prijzen per stuk excl. btw, lijntotalen incl. btw.", left + 4, ty + 2);
     ty += 16;
 
     // --- Totals + VAT breakdown (right) and "voor akkoord" (left) ------------------

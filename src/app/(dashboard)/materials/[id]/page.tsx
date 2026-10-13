@@ -12,8 +12,6 @@ import { formatEUR, formatDateTime } from "@/lib/money";
 import {
   updateMaterialAction,
   upsertSupplierPriceAction,
-  deleteSupplierPriceAction,
-  setPreferredSupplierAction,
 } from "@/lib/inventory-actions";
 import {
   uploadMaterialSampleAction,
@@ -21,6 +19,7 @@ import {
 } from "@/lib/material-sample-actions";
 import { gatherMaterialSamples } from "@/server/materials/gatherMaterialSamples";
 import MovementForm from "@/components/MovementForm";
+import SupplierPriceRow from "@/components/SupplierPriceRow";
 
 const OPERATION_LABELS: Record<Operation, string> = {
   RAW: "Onbewerkt",
@@ -372,7 +371,8 @@ export default async function MaterialDetailPage({
             <h2>Leveranciers &amp; prijzen</h2>
             <p className="small muted">
               De prijs van dit materiaal geef je hier op — één keer per
-              leverancier. De leverancier met <strong>Voorkeur</strong> bepaalt de
+              leverancier. Klik op <strong>Bewerken</strong> om prijs, SKU of
+              levertijd aan te passen. De leverancier met <strong>Voorkeur</strong> bepaalt de
               eenheidskost waarmee kostprijzen gerekend worden.
             </p>
             {material.supplierMaterials.length === 0 ? (
@@ -392,73 +392,25 @@ export default async function MaterialDetailPage({
                   </thead>
                   <tbody>
                     {material.supplierMaterials.map((sm) => (
-                      <tr key={sm.id}>
-                        <td>
-                          <Link
-                            href={`/suppliers/${sm.supplierId}`}
-                            className="link-strong"
-                          >
-                            {sm.supplier.name}
-                          </Link>
-                        </td>
-                        <td className="muted small">{sm.supplierSku ?? "—"}</td>
-                        <td>
-                          {formatEUR(sm.unitPrice.toString())}/{material.unit}
-                          {sm.productUrl && (
-                            <>
-                              {" "}
-                              <a
-                                href={sm.productUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="small"
-                                title="Productpagina"
-                              >
-                                ↗
-                              </a>
-                            </>
-                          )}
-                        </td>
-                        <td className="muted small">
-                          {sm.leadTimeDays != null
-                            ? `${sm.leadTimeDays} d`
-                            : "—"}
-                        </td>
-                        <td>
-                          {sm.isPreferred ? (
-                            <span className="status-pill">Voorkeur</span>
-                          ) : (
-                            <form action={setPreferredSupplierAction}>
-                              <input
-                                type="hidden"
-                                name="materialId"
-                                value={material.id}
-                              />
-                              <input
-                                type="hidden"
-                                name="supplierId"
-                                value={sm.supplierId}
-                              />
-                              <button className="btn-link" type="submit">
-                                Als voorkeur
-                              </button>
-                            </form>
-                          )}
-                        </td>
-                        <td className="row-action">
-                          <form action={deleteSupplierPriceAction}>
-                            <input type="hidden" name="id" value={sm.id} />
-                            <input
-                              type="hidden"
-                              name="materialId"
-                              value={material.id}
-                            />
-                            <button className="btn-link-danger" type="submit">
-                              Verwijderen
-                            </button>
-                          </form>
-                        </td>
-                      </tr>
+                      <SupplierPriceRow
+                        key={sm.id}
+                        materialId={material.id}
+                        unit={material.unit}
+                        row={{
+                          id: sm.id,
+                          supplierId: sm.supplierId,
+                          supplierName: sm.supplier.name,
+                          supplierSku: sm.supplierSku,
+                          productUrl: sm.productUrl,
+                          unitPrice: sm.unitPrice.toString(),
+                          priceLabel: `${formatEUR(sm.unitPrice.toString())}/${material.unit}`,
+                          packSize: sm.packSize?.toString() ?? null,
+                          packPrice: sm.packPrice?.toString() ?? null,
+                          minOrderQty: sm.minOrderQty?.toString() ?? null,
+                          leadTimeDays: sm.leadTimeDays,
+                          isPreferred: sm.isPreferred,
+                        }}
+                      />
                     ))}
                   </tbody>
                 </table>
