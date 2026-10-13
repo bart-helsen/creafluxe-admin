@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import type { MaterialCategory, StockMovementType } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { toDecimal } from "@/lib/money";
+import { toDecimal as toDecimalStrict } from "@/lib/money";
 import { recordStockMovement } from "@/server/materials/stock";
 import { syncMaterialCostFromPreferred } from "@/server/materials/cost-sync";
 
@@ -17,6 +17,24 @@ async function requireUserId(): Promise<string> {
   const session = await auth();
   if (!session?.user?.id) throw new Error("Not authenticated");
   return session.user.id;
+}
+
+// Form input is typed Belgian-style ("2,50", "1.250,75"), but Decimal only
+// understands "2.50" and throws on anything else. An uncaught throw inside a
+// server action reaches the browser as the opaque production error
+// "Minified React error #441". Normalise the string and fail with a readable
+// message instead.
+function toDecimal(value: Parameters<typeof toDecimalStrict>[0]) {
+  if (typeof value !== "string") return toDecimalStrict(value);
+  let s = value.trim().replace(/\s/g, "").replace(/^€/, "");
+  if (s.includes(",")) {
+    // comma is the decimal separator; dots are thousands separators
+    s = s.replace(/\./g, "").replace(",", ".");
+  }
+  if (!/^-?\d+(\.\d+)?$/.test(s)) {
+    throw new Error(`Ongeldig getal: "${value}"`);
+  }
+  return toDecimalStrict(s);
 }
 
 function str(formData: FormData, key: string): string {
