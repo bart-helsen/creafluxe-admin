@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { formatEUR } from "@/lib/money";
+import { formatDate, formatEUR } from "@/lib/money";
 import { updateSupplierAction } from "@/lib/inventory-actions";
+import { PURCHASE_STATUS_LABELS } from "@/lib/purchases";
+import SupplierPurchaseFields from "@/components/SupplierPurchaseFields";
 
 export default async function SupplierDetailPage({
   params,
@@ -17,6 +19,10 @@ export default async function SupplierDetailPage({
       supplierMaterials: {
         include: { material: true },
         orderBy: { material: { name: "asc" } },
+      },
+      purchaseInvoices: {
+        orderBy: [{ invoiceDate: { sort: "desc", nulls: "first" } }, { receivedAt: "desc" }],
+        take: 20,
       },
     },
   });
@@ -87,6 +93,50 @@ export default async function SupplierDetailPage({
               </div>
             )}
           </section>
+
+          <section className="panel">
+            <h2>Inkoopfacturen</h2>
+            {supplier.purchaseInvoices.length === 0 ? (
+              <p className="muted small">Nog geen inkoopfacturen van deze leverancier.</p>
+            ) : (
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Nummer</th>
+                      <th>Datum</th>
+                      <th>Bruto</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {supplier.purchaseInvoices.map((p) => (
+                      <tr key={p.id}>
+                        <td>
+                          <Link href={`/purchases/${p.id}`} className="link-strong">
+                            {p.invoiceNumber ?? p.fileName ?? "—"}
+                          </Link>
+                        </td>
+                        <td className="nowrap">{formatDate(p.invoiceDate)}</td>
+                        <td className="nowrap">
+                          {p.grossAmount == null
+                            ? "—"
+                            : p.currency === "EUR"
+                              ? formatEUR(p.grossAmount.toString())
+                              : `${p.currency} ${p.grossAmount.toString().replace(".", ",")}`}
+                        </td>
+                        <td>
+                          <span className={`status-pill status-pill--purchase-${p.status.toLowerCase()}`}>
+                            {PURCHASE_STATUS_LABELS[p.status]}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
         </div>
 
         <div className="detail-side">
@@ -145,6 +195,7 @@ export default async function SupplierDetailPage({
                   defaultValue={supplier.addressCountry ?? ""}
                 />
               </label>
+              <SupplierPurchaseFields supplier={supplier} />
               <label className="field">
                 Notities
                 <input name="notes" defaultValue={supplier.notes ?? ""} />

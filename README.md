@@ -267,7 +267,162 @@ Migration: `20260927120000_add_requests_and_offers` (additive only).
 | --- | --- |
 | `npm run seed-demo` | Seed a small catalogue + one demo order (dev DB only) |
 | `npm run import-products -- <products.csv>` | Import the catalogue from a CSV export of `products.xlsx` |
-| `npm test` | Run the invoice-math unit tests |
+| `npm test` | Run the unit tests (invoice math, purchase-invoice checks, ...) |
+
+## Inkoopfacturen (purchase invoices)
+
+Supplier invoices you book as costs in Dexxter. Dexxter has no API, so this
+module makes **capture immediate** and the **Dexxter upload a quick, tracked
+routine**. It does not replace Dexxter's VAT return, tax filing or bank sync.
+
+### How it works
+
+```
+upload / phone photo / forwarded e-mail
+        │
+        ▼
+  Te controleren (RECEIVED) ──review & Bevestigen──▶ Klaar voor Dexxter (CHECKED)
+                                                         │  Dexxter-pakket (.zip)
+                                                         ▼  + "Markeer als In Dexxter"
+                                                   In Dexxter (UPLOADED_TO_DEXXTER)
+```
+
+- **Capture** — *Inkoopfacturen → + Factuur toevoegen* (`/purchases/new`):
+  drag & drop, file picker, or *Foto maken* (opens the phone camera). Each file
+  becomes one invoice. Files are stored in R2 under `purchases/` the same way
+  the other in-app uploads are (server action → `putObject`, 10 MB max).
+- **Prefill (free, local)** — for a PDF with embedded text, [unpdf](https://github.com/unjs/unpdf)
+  (Mozilla pdf.js, in-process) reads the text and simple patterns suggest the
+  invoice number, date, amounts, currency, supplier VAT number/country, and spot
+  "reverse charge" wording. A known supplier is recognised by VAT number or
+  name. Photos/scans aren't OCR'd. Any failure → an empty form. No external or
+  paid service, no API key.
+- **Review** (`/purchases/:id`) — the file on the left, fields on the right.
+  Suggestions are tagged *uit PDF*; picking a known supplier fills its
+  remembered country, VAT number, currency, category and VAT treatment; gross
+  follows net + VAT. **Ctrl/⌘+Enter** confirms and jumps to the next invoice,
+  **Ctrl/⌘+S** saves. Nothing becomes *Klaar voor Dexxter* without you pressing
+  *Bevestigen* (plain Enter only saves). Confirming updates the supplier's
+  defaults (stored on `Supplier`, editable on the supplier page).
+- **Checks** (warn, never block): net + VAT ≠ gross, VAT number vs country
+  format, duplicate (same supplier + invoice number), invoice date > 180 days
+  ago or > 7 days ahead, EU supplier outside Belgium that charged VAT, VAT
+  treatment that doesn't fit the country, foreign currency without an EUR
+  amount. Code: `src/lib/purchase-checks.ts`.
+- **Dexxter queue** — the list opens on *Nog niet in Dexxter*; the dashboard
+  shows the count. *Dexxter-pakket* (`/purchases/pack`) downloads every
+  *Klaar voor Dexxter* file renamed `YYYY-MM-DD_supplier_invoicenumber.pdf` plus
+  `samenvatting-<date>.csv` (semicolon, comma decimals — opens in Belgian
+  Excel). After uploading them in Dexxter, tick and *Markeer als ‘In Dexxter’*.
+  Only invoices that were in the pack and are still *Klaar voor Dexxter* move.
+- **Quarter view** (`/purchases/quarter`) — per quarter (by invoice date):
+  totals per VAT treatment in EUR, every invoice with a ✓/✗ Dexxter marker, and
+  a reminder deadline. **It is a cross-check, not a VAT return** — no grid
+  numbers or tax rules are coded. The deadline is the configurable constant
+  `VAT_RETURN_DEADLINE` in `src/lib/purchase-quarter.ts` (currently day 25 of
+  the month after the quarter) and is labelled *verify in Dexxter*.
+- **Stock (optional)** — on a *Materialen* invoice you can book material into
+  stock; the `StockMovement` is linked to the invoice (`purchaseInvoiceId`).
+- **Audit** — every status change (and edit) is a `PurchaseInvoiceEvent`, shown
+  as a timeline on the invoice.
+- **Later** — a KBC CODA/CSV import can add its own `BankTransaction` table plus
+  a link to `PurchaseInvoice` for payment matching; nothing here needs to change.
+
+Code: `src/server/purchases/`, `src/lib/purchases.ts`, `src/lib/purchase-*.ts`,
+`src/app/(dashboard)/purchases/`. Migration:
+`20261024120000_add_purchase_invoices` (additive: new tables/enums, nullable
+columns on `Supplier` and `StockMovement`, one new `NotificationType` value).
+
+### Apply the migration — BEFORE deploying this code
+
+The dashboard home counts purchase invoices, so deploy the code only after the
+tables exist. From your laptop, over the **public** URL (see *Deploy to
+Railway* step 4):
+
+```bash
+DATABASE_URL="postgresql://postgres:...@<host>.proxy.rlwy.net:PORT/railway" \
+  npx prisma migrate deploy
+```
+
+### Environment variables
+
+| Variable | Needed for |
+| --- | --- |
+| `R2_*` (existing) | storing invoice files; without R2 you can still *Zonder bestand invoeren* |
+| `RESEND_API_KEY`, `NOTIFY_EMAIL` (existing) | the 7-day nudge e-mail (logged instead when unset) |
+| `CRON_SECRET` (existing, falls back to `INTAKE_API_KEY`) | `/api/cron/purchase-reminders` |
+| `PURCHASE_INBOUND_SECRET` (new, optional) | inbound e-mail webhook; unset = endpoint off |
+| `COMPANY_VAT` (existing) | so the prefill skips *your own* VAT number printed on supplier invoices |
+
+### Nudge e-mail (7 days) — wiring a scheduler on Railway
+
+`GET/POST /api/cron/purchase-reminders` with header `X-Api-Key: <CRON_SECRET>`
+e-mails you when invoices sit in *Te controleren* or *Klaar voor Dexxter* for
+more than 7 days. It throttles itself (each invoice at most once every 3 days),
+so a daily call is right. Railway runs cron as a service that starts on a
+schedule and exits:
+
+1. In the same Railway project: **New → Docker Image** → `curlimages/curl:8.10.1`.
+2. Variables: `CRON_SECRET` = the app's secret (or `${{<app-service>.CRON_SECRET}}`).
+3. Settings → **Custom Start Command**:
+   ```
+   sh -c 'curl -fsS -H "X-Api-Key: $CRON_SECRET" https://admin.creafluxe.be/api/cron/purchase-reminders && curl -fsS -H "X-Api-Key: $CRON_SECRET" https://admin.creafluxe.be/api/cron/low-stock'
+   ```
+   (this also covers the existing low-stock check).
+4. Settings → **Cron Schedule**: `0 7 * * *` (07:00 UTC daily), or
+   `0 7 * * 0,4` (Thursday and Sunday 07:00 UTC). Note the low-stock check in
+   the same command then runs on those days only.
+
+Any external scheduler that can send a header (e.g. cron-job.org) works too.
+
+### Inbound e-mail (optional, separate step)
+
+Upload works on its own; e-mail is a convenience on top. The app side is done:
+`POST /api/webhooks/purchase-invoices`, protected by `PURCHASE_INBOUND_SECRET`,
+takes JSON `{ messageId, from, subject, attachments: [{ filename, contentType,
+content (base64) }] }` and creates one *Te controleren* invoice per PDF/image
+attachment (tiny inline images and duplicates of the same message are skipped).
+
+What's left is getting mail for a dedicated address into that webhook. The
+simplest free route, since the domain is on Cloudflare: **Cloudflare Email
+Routing → an Email Worker** that parses the mail and posts it. A template is
+in `scripts/inbound-email-worker.example.js` (with setup steps; it only
+accepts mail you forward yourself). Use a subdomain (e.g. `in.creafluxe.be`)
+so your normal mailbox's MX records stay untouched. Any inbound-mail provider
+that can POST JSON works as well, with a small adapter.
+
+### Test it locally
+
+You need a database with the new tables — **not** the Railway one. For example
+a throwaway Postgres in Docker:
+
+```bash
+docker run --name cf-dev -e POSTGRES_PASSWORD=dev -p 5432:5432 -d postgres:16
+```
+
+Then point `.env`'s `DATABASE_URL` at
+`postgresql://postgres:dev@localhost:5432/postgres`, and:
+
+```bash
+npx prisma migrate deploy
+npx tsx scripts/create-admin.ts you@example.be "a-test-password"
+npm run dev
+```
+
+- Without R2: *Zonder bestand invoeren* → fill the form → *Bevestigen* → check
+  the list, pack (CSV only), quarter view and dashboard card.
+- With R2 (`R2_*` set): upload a supplier PDF and watch the prefill.
+- Nudge: `curl -H "X-Api-Key: $CRON_SECRET" http://localhost:3000/api/cron/purchase-reminders`
+  (logs the e-mail when Resend isn't configured; an invoice must be > 7 days in
+  its status — adjust `statusChangedAt` in `npx prisma studio` to try it).
+- Inbound e-mail (needs R2 and `PURCHASE_INBOUND_SECRET`):
+  ```bash
+  curl -X POST http://localhost:3000/api/webhooks/purchase-invoices \
+    -H "Content-Type: application/json" -H "X-Api-Key: $PURCHASE_INBOUND_SECRET" \
+    -d "{\"messageId\":\"<t1@test>\",\"subject\":\"Rechnung\",\"attachments\":[{\"filename\":\"r.pdf\",\"contentType\":\"application/pdf\",\"content\":\"$(base64 -w0 some-invoice.pdf)\"}]}"
+  ```
+- Unit tests: `npm test` (checks, quarter boundaries, file names/CSV/zip,
+  text prefill, status rules, reminder throttling).
 
 ## What comes next (Phase 2)
 

@@ -2,11 +2,17 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import type { MaterialCategory, StockMovementType } from "@prisma/client";
+import type {
+  MaterialCategory,
+  PurchaseCategory,
+  PurchaseVatTreatment,
+  StockMovementType,
+} from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { toDecimal as toDecimalStrict } from "@/lib/money";
 import { recordStockMovement } from "@/server/materials/stock";
+import { PURCHASE_CATEGORIES, VAT_TREATMENTS } from "@/lib/purchases";
 import { syncMaterialCostFromPreferred } from "@/server/materials/cost-sync";
 
 // Server actions behind the Phase 2b inventory screens (materials, suppliers,
@@ -71,6 +77,23 @@ const MOVEMENT_TYPES: StockMovementType[] = [
 // Suppliers
 // ---------------------------------------------------------------------------
 
+// The purchase-invoice details of a supplier (VAT number, country, defaults the
+// Inkoopfacturen review form fills in). Unknown/empty values become null.
+function purchaseFields(formData: FormData) {
+  const vat = str(formData, "vatNumber").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const country = str(formData, "countryCode").toUpperCase();
+  const currency = str(formData, "defaultCurrency").toUpperCase();
+  const category = str(formData, "defaultCategory") as PurchaseCategory;
+  const treatment = str(formData, "defaultVatTreatment") as PurchaseVatTreatment;
+  return {
+    vatNumber: vat || null,
+    countryCode: /^[A-Z]{2}$/.test(country) ? country : null,
+    defaultCurrency: /^[A-Z]{3}$/.test(currency) ? currency : null,
+    defaultCategory: PURCHASE_CATEGORIES.includes(category) ? category : null,
+    defaultVatTreatment: VAT_TREATMENTS.includes(treatment) ? treatment : null,
+  };
+}
+
 export async function createSupplierAction(formData: FormData): Promise<void> {
   await requireUserId();
   const name = str(formData, "name");
@@ -88,6 +111,7 @@ export async function createSupplierAction(formData: FormData): Promise<void> {
       addressCity: optStr(formData, "addressCity"),
       addressCountry: optStr(formData, "addressCountry"),
       notes: optStr(formData, "notes"),
+      ...purchaseFields(formData),
     },
   });
   revalidatePath("/suppliers");
@@ -113,6 +137,7 @@ export async function updateSupplierAction(formData: FormData): Promise<void> {
       addressCity: optStr(formData, "addressCity"),
       addressCountry: optStr(formData, "addressCountry"),
       notes: optStr(formData, "notes"),
+      ...purchaseFields(formData),
       active: formData.get("active") != null,
     },
   });

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createSupplierAction } from "@/lib/inventory-actions";
+import SupplierPurchaseFields from "@/components/SupplierPurchaseFields";
 
 export default function NewSupplierPage() {
   return (
@@ -49,6 +50,7 @@ export default function NewSupplierPage() {
             Land
             <input name="addressCountry" defaultValue="België" />
           </label>
+          <SupplierPurchaseFields />
           <label className="field form-col-2">
             Notities
             <input name="notes" />

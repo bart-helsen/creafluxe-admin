@@ -99,6 +99,36 @@ export const ALLOWED_SAMPLE_MIME = new Set([
 
 export const MAX_SAMPLE_BYTES = 10 * 1024 * 1024; // 10 MB
 
+/** Purchase invoices (Inkoopfacturen): a PDF or a phone photo of the paper. */
+export const ALLOWED_PURCHASE_MIME = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+
+export const MAX_PURCHASE_BYTES = 10 * 1024 * 1024; // 10 MB
+
+/** MIME type for a purchase-invoice file (falls back to the extension), or null. */
+export function resolvePurchaseMime(fileName: string, reported: string): string | null {
+  if (ALLOWED_PURCHASE_MIME.has(reported)) return reported;
+  const ext = fileName.includes(".") ? fileName.split(".").pop()!.toLowerCase() : "";
+  const byExt: Record<string, string> = {
+    pdf: "application/pdf",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    webp: "image/webp",
+  };
+  return byExt[ext] ?? null;
+}
+
+/** Build a collision-proof storage key for a purchase invoice file. */
+export function buildPurchaseKey(fileName: string): string {
+  const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
+  return `purchases/${Date.now()}-${randomBytes(6).toString("hex")}-${safe}`;
+}
+
 /** Build a collision-proof storage key for a customer upload. */
 export function buildCustomKey(fileName: string): string {
   const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);

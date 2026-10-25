@@ -10,6 +10,7 @@ const NAV = [
   { href: "/requests", label: "Aanvragen", phase: null },
   { href: "/orders", label: "Bestellingen", phase: null },
   { href: "/invoices", label: "Facturen", phase: null },
+  { href: "/purchases", label: "Inkoopfacturen", phase: null },
   { href: "/customers", label: "Klanten", phase: null },
   { href: "/files", label: "Bestanden", phase: null },
   { href: "/products", label: "Catalogus", phase: null },

@@ -38,6 +38,7 @@ model User {
   statusChanges  OrderStatusEvent[]
   stockMovements StockMovement[]
   requestEvents  RequestEvent[]
+  purchaseInvoiceEvents PurchaseInvoiceEvent[]
 }
 
 enum UserRole {
@@ -638,9 +639,18 @@ model Supplier {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Purchase-invoice details, remembered from the last checked invoice so a
+  // repeat supplier is filled in for you (see Inkoopfacturen). All optional.
+  vatNumber           String? // e.g. DE123456789 (with country prefix)
+  countryCode         String? // ISO 3166 alpha-2, e.g. "DE" — used for VAT checks
+  defaultCurrency     String? // "EUR", "USD", ...
+  defaultCategory     PurchaseCategory?
+  defaultVatTreatment PurchaseVatTreatment?
+
   supplierMaterials  SupplierMaterial[]
   currentForMaterials Material[]       @relation("CurrentSupplier")
   stockMovements     StockMovement[]
+  purchaseInvoices   PurchaseInvoice[]
 
   @@index([active])
 }
@@ -737,6 +747,9 @@ model StockMovement {
   order      Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
   supplierId String?
   supplier   Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  // The purchase invoice this stock came in on (optional — see Inkoopfacturen).
+  purchaseInvoiceId String?
+  purchaseInvoice   PurchaseInvoice? @relation(fields: [purchaseInvoiceId], references: [id], onDelete: SetNull)
   createdById String?
   createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
@@ -745,6 +758,7 @@ model StockMovement {
   @@index([materialId])
   @@index([orderId])
   @@index([type])
+  @@index([purchaseInvoiceId])
 }
 
 enum StockMovementType {
@@ -869,6 +883,133 @@ enum Operation {
 }
 
 // ===========================================================================
+// PURCHASE INVOICES  (Inkoopfacturen)
+//   Supplier invoices you have to book as costs in Dexxter. Dexxter has no API,
+//   so this module makes capture immediate (upload / forwarded e-mail) and the
+//   Dexxter upload a tracked routine:
+//     RECEIVED            → file is in, data not yet confirmed by you
+//     CHECKED             → you reviewed/confirmed the fields (never automatic)
+//     UPLOADED_TO_DEXXTER → you uploaded it to Dexxter (via the "Dexxter pack")
+//   Every status change is written as a PurchaseInvoiceEvent.
+//
+//   Supplier details are snapshotted on the invoice (like invoice lines), so
+//   editing the supplier later never rewrites a booked invoice. Money is
+//   Decimal(10,2) in the invoice's own currency; amountEur is the optional EUR
+//   equivalent for non-EUR invoices.
+//
+//   Later (not built yet): a bank import (KBC CODA/CSV) can add its own
+//   BankTransaction table and a join to this one for payment matching — nothing
+//   here needs to change for that.
+// ===========================================================================
+
+model PurchaseInvoice {
+  id        String                @id @default(cuid())
+  status    PurchaseInvoiceStatus @default(RECEIVED)
+  source    PurchaseInvoiceSource @default(UPLOAD)
+  // Where it came from: the e-mail Message-ID (+ attachment name) for EMAIL.
+  // Used to ignore a webhook retry of the same attachment.
+  sourceRef String?
+
+  supplierId        String?
+  supplier          Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  // Snapshot of the supplier as printed on this invoice.
+  supplierName      String?
+  supplierCountry   String? // ISO 3166 alpha-2
+  supplierVatNumber String?
+
+  invoiceNumber String?
+  invoiceDate   DateTime? @db.Date
+  receivedAt    DateTime  @default(now())
+
+  currency    String   @default("EUR")
+  netAmount   Decimal? @db.Decimal(10, 2)
+  vatAmount   Decimal? @db.Decimal(10, 2) // null = no VAT on the invoice
+  grossAmount Decimal? @db.Decimal(10, 2)
+  amountEur   Decimal? @db.Decimal(10, 2) // gross in EUR, for non-EUR invoices
+
+  vatTreatment PurchaseVatTreatment @default(EU_REVERSE_CHARGE)
+  category     PurchaseCategory     @default(OTHER)
+  notes        String?
+
+  // The invoice file (PDF or photo) in R2; the app streams it on demand.
+  fileKey   String? @unique
+  fileName  String?
+  mimeType  String?
+  sizeBytes Int?
+
+  // Local, free prefill from the PDF's embedded text: the suggested values,
+  // which ones were found, and a 0–100 confidence. Suggestions only — the
+  // fields above stay empty until you save the review form.
+  extraction           Json?
+  extractionConfidence Int?
+
+  statusChangedAt     DateTime  @default(now()) // drives the 7-day reminder
+  checkedAt           DateTime?
+  uploadedToDexxterAt DateTime?
+  lastRemindedAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events         PurchaseInvoiceEvent[]
+  stockMovements StockMovement[] // material bought on this invoice (optional)
+
+  @@index([status])
+  @@index([invoiceDate])
+  @@index([supplierId])
+  @@index([sourceRef])
+}
+
+enum PurchaseInvoiceStatus {
+  RECEIVED // in, not yet confirmed
+  CHECKED // you confirmed the data — ready for Dexxter
+  UPLOADED_TO_DEXXTER // booked in Dexxter
+}
+
+enum PurchaseInvoiceSource {
+  UPLOAD // uploaded in the app (phone camera / file / drag & drop)
+  EMAIL // forwarded to the inbound address
+}
+
+// How VAT works on the purchase. Labels only — this app does not compute a VAT
+// return; verify the figures in Dexxter or with your accountant.
+enum PurchaseVatTreatment {
+  EU_REVERSE_CHARGE // EU supplier, no VAT charged (reverse charge)
+  BELGIAN_VAT // Belgian VAT charged by the supplier
+  NON_EU_IMPORT // from outside the EU (import)
+  NO_VAT_RECOVERABLE // VAT paid but not deductible / no VAT at all
+}
+
+enum PurchaseCategory {
+  MATERIALS
+  SOFTWARE
+  SHIPPING
+  OTHER
+}
+
+// Audit trail of a purchase invoice — same idea as OrderStatusEvent.
+model PurchaseInvoiceEvent {
+  id                String                   @id @default(cuid())
+  purchaseInvoiceId String
+  purchaseInvoice   PurchaseInvoice          @relation(fields: [purchaseInvoiceId], references: [id], onDelete: Cascade)
+  kind              PurchaseInvoiceEventKind
+  fromStatus        PurchaseInvoiceStatus?
+  toStatus          PurchaseInvoiceStatus?
+  note              String?
+  userId            String?
+  user              User?                    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt         DateTime                 @default(now())
+
+  @@index([purchaseInvoiceId])
+}
+
+enum PurchaseInvoiceEventKind {
+  CREATED // uploaded or received by e-mail
+  UPDATED // fields edited
+  STATUS // status changed
+}
+
+// ===========================================================================
 // NOTIFICATIONS & SEQUENTIAL COUNTERS
 // ===========================================================================
 
@@ -896,6 +1037,7 @@ enum NotificationType {
   PAYMENT_RECEIVED
   ORDER_STATUS_CHANGED
   LOW_STOCK
+  PURCHASE_INVOICE_REMINDER
 }
 
 enum NotificationStatus {

@@ -24,6 +24,8 @@ export default async function DashboardHome() {
     recent,
     newRequests,
     openRequests,
+    purchasesToCheck,
+    purchasesReady,
   ] = await Promise.all([
       prisma.order.count({ where: { status: { in: STATUS_BUCKETS.NEW } } }),
       prisma.order.count({ where: { status: { in: STATUS_BUCKETS.OPEN } } }),
@@ -46,7 +48,10 @@ export default async function DashboardHome() {
       prisma.quoteRequest.count({
         where: { status: { in: REQUEST_BUCKETS.OPEN as RequestStatus[] } },
       }),
+      prisma.purchaseInvoice.count({ where: { status: "RECEIVED" } }),
+      prisma.purchaseInvoice.count({ where: { status: "CHECKED" } }),
     ]);
+  const purchasesOpen = purchasesToCheck + purchasesReady;
 
   const lowCount = materials.filter((m) =>
     new Prisma.Decimal(m.stockQuantity).lte(m.reorderLevel),
@@ -82,6 +87,17 @@ export default async function DashboardHome() {
           <span className="stat-label">Concept-facturen</span>
           <span className="stat-value">{draftCount}</span>
           <span className="stat-hint">Te controleren</span>
+        </Link>
+        <Link href="/purchases" className="stat-card stat-card--link">
+          <span className="stat-label">Inkoop niet in Dexxter</span>
+          <span className={`stat-value ${purchasesOpen > 0 ? "stock-low" : ""}`}>
+            {purchasesOpen}
+          </span>
+          <span className="stat-hint">
+            {purchasesOpen === 0
+              ? "Alles geüpload"
+              : `${purchasesToCheck} te controleren · ${purchasesReady} klaar voor Dexxter`}
+          </span>
         </Link>
         <Link
           href="/materials?filter=low"

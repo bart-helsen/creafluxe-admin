@@ -5,6 +5,13 @@ import {
   MANUAL_ORDER_START_STATUSES,
   type ManualOrderChannel,
 } from "@/lib/manual-order";
+import {
+  PURCHASE_CATEGORIES,
+  VAT_TREATMENTS,
+  parseAmount,
+  type PurchaseCategoryValue,
+  type PurchaseVatTreatmentValue,
+} from "@/lib/purchases";
 
 // Zod schemas for validating input. As the app grows (Phase 1: the order
 // intake body, presign requests, etc.) their schemas live here too, so every
@@ -340,3 +347,80 @@ export const offerSaveSchema = z.object({
 
 export type OfferSaveInput = z.infer<typeof offerSaveSchema>;
 export type OfferLineInput = z.infer<typeof offerLineSchema>;
+
+// ---------------------------------------------------------------------------
+// Purchase invoices (Inkoopfacturen) — the review form. Amounts are typed the
+// Belgian way ("1.234,56") and normalised to "1234.56"; empty → null. Nothing
+// is required to SAVE a draft; confirming (→ CHECKED) has its own minimum,
+// enforced in server/purchases (purchaseConfirmMissing).
+// ---------------------------------------------------------------------------
+
+const optionalAmount = z
+  .string()
+  .nullish()
+  .transform((v, ctx) => {
+    if (v == null || v.trim() === "") return null;
+    const parsed = parseAmount(v);
+    if (parsed == null) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Ongeldig bedrag: "${v}".` });
+      return z.NEVER;
+    }
+    return parsed;
+  });
+
+export const purchaseSaveSchema = z.object({
+  supplierId: optionalText,
+  supplierName: optionalText,
+  supplierCountry: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^([A-Z]{2})?$/, "Kies een land.")
+    .nullish()
+    .transform((v) => (v ? v : null)),
+  supplierVatNumber: z
+    .string()
+    .nullish()
+    .transform((v) => (v ? v.toUpperCase().replace(/[^A-Z0-9]/g, "") || null : null)),
+  invoiceNumber: optionalText,
+  invoiceDate: z
+    .string()
+    .trim()
+    .regex(/^(\d{4}-\d{2}-\d{2})?$/, "Ongeldige factuurdatum.")
+    .nullish()
+    .transform((v) => (v ? v : null)),
+  currency: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{3}$/, "Ongeldige munt.")
+    .default("EUR"),
+  netAmount: optionalAmount,
+  vatAmount: optionalAmount,
+  grossAmount: optionalAmount,
+  amountEur: optionalAmount,
+  vatTreatment: z.enum(VAT_TREATMENTS as [PurchaseVatTreatmentValue, ...PurchaseVatTreatmentValue[]]),
+  category: z.enum(PURCHASE_CATEGORIES as [PurchaseCategoryValue, ...PurchaseCategoryValue[]]),
+  notes: optionalText,
+});
+
+export type PurchaseSaveInput = z.infer<typeof purchaseSaveSchema>;
+
+/** Inbound e-mail webhook body (POST /api/webhooks/purchase-invoices). */
+export const purchaseInboundSchema = z.object({
+  messageId: z.string().trim().max(500).nullish(),
+  from: z.string().trim().max(500).nullish(),
+  subject: z.string().trim().max(1000).nullish(),
+  attachments: z
+    .array(
+      z.object({
+        filename: z.string().trim().min(1).max(255),
+        contentType: z.string().trim().max(200).default(""),
+        content: z.string().min(1), // base64
+      }),
+    )
+    .max(20)
+    .default([]),
+});
+
+export type PurchaseInboundInput = z.infer<typeof purchaseInboundSchema>;

@@ -3,8 +3,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Keep server-only packages out of the client/edge bundles. pdfkit ships its
   // own font data files and must not be bundled, or Next can't find them at
-  // runtime (invoice PDF rendering would fail).
-  serverExternalPackages: ["@prisma/client", "bcryptjs", "pdfkit"],
+  // runtime (invoice PDF rendering would fail). unpdf (purchase-invoice text
+  // prefill) bundles pdf.js and is loaded as-is for the same reason.
+  serverExternalPackages: ["@prisma/client", "bcryptjs", "pdfkit", "unpdf"],
   // Server actions default to a 1 MB body limit, which rejects most design
   // files. Uploads are capped at 10 MB in the actions (MAX_UPLOAD_BYTES).
   experimental: {

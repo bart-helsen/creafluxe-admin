@@ -21,6 +21,7 @@ export interface RecordMovementInput {
   reason?: string | null;
   supplierId?: string | null;
   orderId?: string | null;
+  purchaseInvoiceId?: string | null; // the purchase invoice it came in on
   createdById?: string | null;
 }
 
@@ -66,6 +67,7 @@ export async function recordStockMovement(
         reason: input.reason ?? undefined,
         supplierId: input.supplierId ?? undefined,
         orderId: input.orderId ?? undefined,
+        purchaseInvoiceId: input.purchaseInvoiceId ?? undefined,
         createdById: input.createdById ?? undefined,
       },
     });
