@@ -362,6 +362,9 @@ model QuoteRequest {
   title           String? // short working title, e.g. "Naambord eik 60 cm"
   description     String  // what the customer asked for (the brief)
   customerRemarks String?
+  // Options picked in a website configurator (src/lib/product-config.ts), as
+  // sent — download it to run the generator in product-tools/.
+  configuration   Json?
 
   deliveryRequested Boolean @default(false)
   deliveryStreet    String?

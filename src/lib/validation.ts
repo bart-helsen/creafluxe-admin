@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { LOGGABLE_EVENT_KINDS, MANUAL_REQUEST_STATUSES } from "@/lib/requests";
+import { productConfigurationSchema } from "@/lib/product-config";
 import {
   MANUAL_ORDER_CHANNELS,
   MANUAL_ORDER_START_STATUSES,
@@ -71,12 +72,21 @@ export const intakeSchema = z
       .nullish(),
     customerRemarks: z.string().trim().min(1).nullish(),
     designBrief: z.string().trim().min(1).nullish(),
+    // Options from a website configurator (CUSTOM requests only for now).
+    configuration: productConfigurationSchema.nullish(),
     items: z.array(intakeItemSchema).default([]),
   })
-  .refine((v) => v.items.length > 0 || (v.type === "CUSTOM" && !!v.designBrief), {
-    message:
-      "Provide at least one item, or a designBrief for a CUSTOM request.",
-    path: ["items"],
+  .refine(
+    (v) => v.items.length > 0 || (v.type === "CUSTOM" && (!!v.designBrief || !!v.configuration)),
+    {
+      message:
+        "Provide at least one item, or a designBrief or configuration for a CUSTOM request.",
+      path: ["items"],
+    },
+  )
+  .refine((v) => !v.configuration || v.type === "CUSTOM", {
+    message: "A configuration is only accepted on a CUSTOM request.",
+    path: ["configuration"],
   });
 
 export type IntakeInput = z.infer<typeof intakeSchema>;

@@ -5,6 +5,7 @@ import { resolveCustomer } from "@/server/orders/createManualOrder";
 import { notifyNewRequest } from "@/server/notifications/notifyNewRequest";
 import { MANUAL_ORDER_CHANNELS } from "@/lib/manual-order";
 import { assetFromKey } from "@/server/orders/createOrder";
+import { PRODUCT_LABELS, describeConfiguration } from "@/lib/product-config";
 import type { IntakeInput, ManualRequestInput } from "@/lib/validation";
 
 // A custom job starts life as a request (Aanvraag), not an order: there is no
@@ -26,6 +27,10 @@ export interface CreateRequestResult {
 export function intakeDescription(input: IntakeInput): string {
   const parts: string[] = [];
   if (input.designBrief) parts.push(input.designBrief);
+  if (input.configuration) {
+    const rows = describeConfiguration(input.configuration);
+    parts.push(`Configuratie:\n${rows.map((r) => `• ${r.label}: ${r.value}`).join("\n")}`);
+  }
   if (input.items.length > 0) {
     const lines = input.items.map((it) => {
       const opts = [it.material, it.size, it.style, it.design].filter(Boolean).join(", ");
@@ -69,7 +74,9 @@ export async function createRequestFromIntake(
         channel: "website",
         clientRef: input.clientRef ?? undefined,
         customerId: customer.id,
+        title: input.configuration ? PRODUCT_LABELS[input.configuration.product] : undefined,
         description: intakeDescription(input),
+        configuration: input.configuration ?? undefined,
         customerRemarks: input.customerRemarks ?? undefined,
         deliveryRequested: delivery?.requested ?? false,
         deliveryStreet: delivery?.street ?? undefined,
