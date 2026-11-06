@@ -690,9 +690,22 @@ model Material {
   stockMovements    StockMovement[]
   bomLines          ProductMaterial[]
   offerLineMaterials OfferLineMaterial[] // material use costed on offer lines
-  samples           MaterialSample[] // showcase photos: raw + per-operation, per-machine
+  samples           MaterialSample[] // showcase photos specific to this material (per-operation, per-machine)
+
+  // Optional shared photo set: all thicknesses/variants of the same material
+  // point to one group and show its photos, so each photo is uploaded once.
+  sampleGroupId String?
+  sampleGroup   MaterialSampleGroup? @relation(fields: [sampleGroupId], references: [id], onDelete: SetNull)
+
+  // Public website (the "Materialen" section): only materials NOT in a sample
+  // group are published individually; grouped materials are published through
+  // their group (see MaterialSampleGroup.showOnWebsite).
+  showOnWebsite Boolean @default(false)
+  publicName    String? // client-facing name; falls back to `name`
+  websiteText   String? // short client-facing blurb
 
   @@index([category])
+  @@index([sampleGroupId])
   @@index([active])
 }
 
@@ -851,8 +864,13 @@ model Machine {
 
 model MaterialSample {
   id         String    @id @default(cuid())
-  materialId String
-  material   Material  @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  // Exactly one of materialId / groupId is set (enforced in the app and by a
+  // CHECK constraint in the migration). A group sample is shown on every
+  // material in that group.
+  materialId String?
+  material   Material? @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  groupId    String?
+  group      MaterialSampleGroup? @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   operation  Operation
   // null for RAW (no machine); set for every produced operation.
@@ -873,7 +891,25 @@ model MaterialSample {
   updatedAt DateTime @updatedAt
 
   @@index([materialId, operation])
+  @@index([groupId, operation])
   @@index([machineId])
+}
+
+// A named set of showcase photos shared by several materials, e.g. "Berken
+// multiplex" for the 3, 4 and 6 mm SKUs: engraving/scoring looks the same on
+// every thickness, so the photos are uploaded once on the group.
+model MaterialSampleGroup {
+  id        String   @id @default(cuid())
+  name      String   @unique // also the client-facing name on the website
+
+  // Published on the website when true (needs at least one active photo).
+  showOnWebsite Boolean @default(false)
+  websiteText   String? // short client-facing blurb
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  materials Material[]
+  samples   MaterialSample[]
 }
 
 // What was done to the material. RAW = the untouched swatch. Add values here as
@@ -881,7 +917,8 @@ model MaterialSample {
 enum Operation {
   RAW
   CUT
-  ENGRAVE
+  ENGRAVE_VECTOR // line engraving (vector paths)
+  ENGRAVE_BITMAP // raster/bitmap engraving (photos, filled areas)
   SCORE
 }
 
