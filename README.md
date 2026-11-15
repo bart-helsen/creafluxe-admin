@@ -383,13 +383,12 @@ takes JSON `{ messageId, from, subject, attachments: [{ filename, contentType,
 content (base64) }] }` and creates one *Te controleren* invoice per PDF/image
 attachment (tiny inline images and duplicates of the same message are skipped).
 
-What's left is getting mail for a dedicated address into that webhook. The
-simplest free route, since the domain is on Cloudflare: **Cloudflare Email
-Routing → an Email Worker** that parses the mail and posts it. A template is
-in `scripts/inbound-email-worker.example.js` (with setup steps; it only
-accepts mail you forward yourself). Use a subdomain (e.g. `in.creafluxe.be`)
-so your normal mailbox's MX records stay untouched. Any inbound-mail provider
-that can POST JSON works as well, with a small adapter.
+Getting mail for a dedicated address into that webhook is done by the
+Cloudflare Email Worker in `workers/invoice-mail/` (the domain's DNS is on
+Cloudflare; a subdomain such as `in.creafluxe.be` is used so the normal
+mailboxes' MX records stay untouched). It also unpacks mails forwarded "as
+attachment" (.eml) and bounces mails it can't use, with the reason. Setup and
+tests: `workers/invoice-mail/README.md`.
 
 ### Test it locally
 
