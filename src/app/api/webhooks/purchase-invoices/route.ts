@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
-import { prisma } from "@/lib/db";
 import { rateLimit, clientIp } from "@/lib/rateLimit";
 import { purchaseInboundSchema } from "@/lib/validation";
-import { isR2Configured, resolvePurchaseMime, MAX_PURCHASE_BYTES } from "@/lib/r2";
-import { receivePurchaseInvoice } from "@/server/purchases/purchaseInvoices";
+import { isR2Configured } from "@/lib/r2";
+import { receiveInboundFiles } from "@/server/purchases/inbound";
 
-// POST /api/webhooks/purchase-invoices — inbound e-mail. Whatever receives mail
-// for your dedicated address (a Cloudflare Email Worker, or an inbound-mail
-// provider) posts the parsed message here as JSON:
+// POST /api/webhooks/purchase-invoices — inbound e-mail pushed by a service.
+// The normal route is the mailbox reader (/api/cron/purchase-mailbox, IMAP);
+// this endpoint is for an inbound-mail provider that posts the parsed message
+// as JSON instead:
 //
 //   { "messageId": "<...>", "from": "billing@supplier.de", "subject": "Rechnung",
 //     "attachments": [{ "filename": "RE-42.pdf", "contentType": "application/pdf",
@@ -72,53 +72,16 @@ export async function POST(req: Request) {
   }
 
   const { messageId, from, subject, attachments } = parsed.data;
-  const notes = [from && `Van: ${from}`, subject && `Onderwerp: ${subject}`].filter(Boolean).join("\n") || null;
-
-  const created: string[] = [];
-  const skipped: { filename: string; reason: string }[] = [];
-
-  for (const att of attachments) {
-    const mimeType = resolvePurchaseMime(att.filename, att.contentType);
-    if (!mimeType) {
-      skipped.push({ filename: att.filename, reason: "unsupported type" });
-      continue;
-    }
-    const bytes = Buffer.from(att.content, "base64");
-    if (bytes.length === 0 || bytes.length > MAX_PURCHASE_BYTES) {
-      skipped.push({ filename: att.filename, reason: "empty or larger than 10 MB" });
-      continue;
-    }
-    // Tiny inline images are e-mail signatures/logos, not invoices.
-    if (mimeType !== "application/pdf" && bytes.length < 20 * 1024) {
-      skipped.push({ filename: att.filename, reason: "small inline image" });
-      continue;
-    }
-
-    const sourceRef = messageId ? `${messageId}#${att.filename}`.slice(0, 700) : null;
-    if (sourceRef) {
-      const seen = await prisma.purchaseInvoice.findFirst({
-        where: { sourceRef },
-        select: { id: true },
-      });
-      if (seen) {
-        skipped.push({ filename: att.filename, reason: "already received" });
-        continue;
-      }
-    }
-
-    try {
-      const { id } = await receivePurchaseInvoice({
-        file: { bytes, fileName: att.filename, mimeType },
-        source: "EMAIL",
-        sourceRef,
-        notes,
-      });
-      created.push(id);
-    } catch (err) {
-      console.error("[webhook:purchase-invoices] attachment failed:", att.filename, err);
-      skipped.push({ filename: att.filename, reason: "could not be stored" });
-    }
-  }
+  const { created, skipped } = await receiveInboundFiles({
+    messageRef: messageId ?? null,
+    from,
+    subject,
+    files: attachments.map((a) => ({
+      filename: a.filename,
+      contentType: a.contentType,
+      bytes: Buffer.from(a.content, "base64"),
+    })),
+  });
 
   return NextResponse.json({ ok: true, created, skipped }, { status: created.length ? 201 : 200 });
 }

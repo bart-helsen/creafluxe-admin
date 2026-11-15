@@ -351,7 +351,8 @@ DATABASE_URL="postgresql://postgres:...@<host>.proxy.rlwy.net:PORT/railway" \
 | `R2_*` (existing) | storing invoice files; without R2 you can still *Zonder bestand invoeren* |
 | `RESEND_API_KEY`, `NOTIFY_EMAIL` (existing) | the 7-day nudge e-mail (logged instead when unset) |
 | `CRON_SECRET` (existing, falls back to `INTAKE_API_KEY`) | `/api/cron/purchase-reminders` |
-| `PURCHASE_INBOUND_SECRET` (new, optional) | inbound e-mail webhook; unset = endpoint off |
+| `PURCHASE_IMAP_HOST`, `PURCHASE_IMAP_USER`, `PURCHASE_IMAP_PASSWORD` (optional) | reading the invoice mailbox; unset = off. Also `PURCHASE_IMAP_PORT` (993), `PURCHASE_IMAP_FOLDER` (INBOX), `PURCHASE_IMAP_DONE_FOLDER` (Verwerkt), `PURCHASE_IMAP_ALLOWED_FROM` |
+| `PURCHASE_INBOUND_SECRET` (optional) | inbound e-mail webhook for a mail provider that pushes JSON; unset = endpoint off |
 | `COMPANY_VAT` (existing) | so the prefill skips *your own* VAT number printed on supplier invoices |
 
 ### Nudge e-mail (7 days) — wiring a scheduler on Railway
@@ -375,20 +376,55 @@ schedule and exits:
 
 Any external scheduler that can send a header (e.g. cron-job.org) works too.
 
-### Inbound e-mail (optional, separate step)
+### Invoices by e-mail: the factuurmailbox
 
-Upload works on its own; e-mail is a convenience on top. The app side is done:
-`POST /api/webhooks/purchase-invoices`, protected by `PURCHASE_INBOUND_SECRET`,
-takes JSON `{ messageId, from, subject, attachments: [{ filename, contentType,
-content (base64) }] }` and creates one *Te controleren* invoice per PDF/image
-attachment (tiny inline images and duplicates of the same message are skipped).
+Forward a supplier mail to a dedicated mailbox (e.g. `facturen@creafluxe.be`)
+and every PDF or photo in it becomes a *Te controleren* invoice, prefilled
+like an upload. The app reads that mailbox over IMAP:
 
-Getting mail for a dedicated address into that webhook is done by the
-Cloudflare Email Worker in `workers/invoice-mail/` (the domain's DNS is on
-Cloudflare; a subdomain such as `in.creafluxe.be` is used so the normal
-mailboxes' MX records stay untouched). It also unpacks mails forwarded "as
-attachment" (.eml) and bounces mails it can't use, with the reason. Setup and
-tests: `workers/invoice-mail/README.md`.
+- Every mail in the folder **without a flag** is read. Mails forwarded "as
+  attachment" (.eml) are unpacked; signature images and other files are ignored.
+- Stored → the mail moves to the folder `Verwerkt` (created when needed).
+- Nothing usable (no PDF/photo, or a sender not in `PURCHASE_IMAP_ALLOWED_FROM`)
+  → the mail gets a **flag** (a star in webmail) and stays. Remove the flag to
+  have it read again.
+- Storage failed (e.g. R2 down) → the mail stays as it is and is tried again
+  next run. Reading a mail twice never creates a duplicate.
+- Reading the mailbox in webmail yourself doesn't interfere: read/unread is
+  not used.
+
+Setup:
+
+1. Create the mailbox at your mail host (easyhost now). Note its IMAP server,
+   port (993) and password.
+2. Railway → admin app → Variables:
+   ```
+   PURCHASE_IMAP_HOST=<imap server>
+   PURCHASE_IMAP_USER=facturen@creafluxe.be
+   PURCHASE_IMAP_PASSWORD=<password>
+   PURCHASE_IMAP_ALLOWED_FROM=@creafluxe.be      # optional, recommended
+   ```
+   `ALLOWED_FROM` is checked against From, Sender and Return-Path, so both a
+   manual forward and an automatic forwarding rule from your own mailbox pass.
+3. Inkoopfacturen now shows **Mailbox nu ophalen**: forward one invoice and
+   press it to test.
+4. Schedule it every 15 minutes: a second Railway cron service like the one
+   above, with start command
+   ```
+   sh -c 'curl -fsS -H "X-Api-Key: $CRON_SECRET" https://admin.creafluxe.be/api/cron/purchase-mailbox'
+   ```
+   and cron schedule `*/15 * * * *`.
+5. Optional: a forwarding rule in the mailbox where invoices arrive (suppliers'
+   billing addresses + attachment → forward to `facturen@`).
+
+After a move to Google Workspace: make `facturen@` a Google mailbox (or alias
+group), create an app password, and set `PURCHASE_IMAP_HOST=imap.gmail.com`,
+the user and the app password. Nothing else changes.
+
+`POST /api/webhooks/purchase-invoices` (protected by `PURCHASE_INBOUND_SECRET`)
+takes the same mail as JSON `{ messageId, from, subject, attachments: [{
+filename, contentType, content (base64) }] }`, for an inbound-mail service
+that pushes instead. Both use `server/purchases/inbound.ts`.
 
 ### Test it locally
 
@@ -414,7 +450,9 @@ npm run dev
 - Nudge: `curl -H "X-Api-Key: $CRON_SECRET" http://localhost:3000/api/cron/purchase-reminders`
   (logs the e-mail when Resend isn't configured; an invoice must be > 7 days in
   its status — adjust `statusChangedAt` in `npx prisma studio` to try it).
-- Inbound e-mail (needs R2 and `PURCHASE_INBOUND_SECRET`):
+- Mailbox: point `PURCHASE_IMAP_*` at a test mailbox (not the real one) and
+  press *Mailbox nu ophalen*, or `curl -H "X-Api-Key: $CRON_SECRET" http://localhost:3000/api/cron/purchase-mailbox`.
+- Inbound webhook (needs R2 and `PURCHASE_INBOUND_SECRET`):
   ```bash
   curl -X POST http://localhost:3000/api/webhooks/purchase-invoices \
     -H "Content-Type: application/json" -H "X-Api-Key: $PURCHASE_INBOUND_SECRET" \

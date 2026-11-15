@@ -1753,3 +1753,20 @@ button.tab {
     grid-template-columns: 1fr;
   }
 }
+
+/* Inkoopfacturen: the purchase-invoice mailbox line above the tabs. */
+.mailbox-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin: 0 0 16px;
+}
+.mailbox-bar > p {
+  margin: 6px 0 0;
+}
+.mailbox-bar .inline-actions {
+  align-items: flex-end;
+  max-width: 100%;
+}

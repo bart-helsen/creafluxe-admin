@@ -13,6 +13,9 @@ import {
   type PurchaseBucket,
 } from "@/lib/purchases";
 import { isoDate } from "@/server/purchases/purchaseInvoices";
+import { mailboxConfig } from "@/server/purchases/mailbox";
+import ActionForm, { SubmitButton } from "@/components/ActionForm";
+import { fetchPurchaseMailboxAction } from "@/lib/purchase-actions";
 
 // Inkoopfacturen: every supplier invoice from capture to Dexxter. The default
 // tab is "Nog niet in Dexxter" — what still needs your attention.
@@ -67,6 +70,7 @@ export default async function PurchasesPage({
 
   const today = todayInBrussels();
   const readyCount = counts.CHECKED;
+  const mailbox = mailboxConfig();
 
   return (
     <div className="page">
@@ -100,6 +104,20 @@ export default async function PurchasesPage({
             </Link>
           )}
         </p>
+      )}
+
+      {mailbox && (
+        <div className="mailbox-bar">
+          <p className="muted">
+            Mail facturen door naar <strong>{mailbox.user}</strong>; de mailbox wordt elk kwartier
+            gelezen.
+          </p>
+          <ActionForm action={fetchPurchaseMailboxAction} className="inline-actions">
+            <SubmitButton className="btn-ghost btn-ghost--dark" pendingLabel="Mailbox lezen…">
+              Mailbox nu ophalen
+            </SubmitButton>
+          </ActionForm>
+        </div>
       )}
 
       <div className="tabs">

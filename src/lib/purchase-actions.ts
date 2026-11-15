@@ -17,6 +17,7 @@ import {
   receivePurchaseInvoice,
   savePurchaseInvoice,
 } from "@/server/purchases/purchaseInvoices";
+import { describeRun, mailboxConfig, pollPurchaseMailbox } from "@/server/purchases/mailbox";
 import type { ActionState } from "@/components/ActionForm";
 
 // Server actions behind the Inkoopfacturen screens. Each re-checks the session,
@@ -244,4 +245,26 @@ export async function bookPurchaseStockAction(
   revalidatePath(`/materials/${materialId}`);
   revalidatePath("/materials");
   return { success: "Ingeboekt in de voorraad." };
+}
+
+/** "Mailbox nu ophalen": read the purchase-invoice mailbox right away. */
+export async function fetchPurchaseMailboxAction(
+  _prev: ActionState | undefined,
+  _formData: FormData,
+): Promise<ActionState> {
+  const uid = await userId();
+  if (!uid) return NOT_SIGNED_IN;
+  const cfg = mailboxConfig();
+  if (!cfg) return { error: "De factuurmailbox is niet ingesteld (PURCHASE_IMAP_* op Railway)." };
+  if (!isR2Configured()) return { error: "Bestandsopslag (R2) is niet geconfigureerd." };
+  try {
+    const run = await pollPurchaseMailbox(cfg);
+    if (run.created) revalidatePurchases();
+    const summary = describeRun(run);
+    return run.mails.some((m) => m.outcome !== "done") ? { error: summary } : { success: summary };
+  } catch (err) {
+    console.error("[purchases] mailbox fetch failed", err);
+    const message = err instanceof Error ? err.message : String(err);
+    return { error: `Kon de mailbox niet lezen: ${message}` };
+  }
 }
