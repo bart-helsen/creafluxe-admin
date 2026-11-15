@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { pickActiveInvoice } from "@/server/invoices/activeInvoice";
 import { formatEUR, formatDate, formatDateTime } from "@/lib/money";
 import { STATUS_LABELS } from "@/server/orders/changeStatus";
 import { updateCustomerAction } from "@/lib/catalogue-actions";
@@ -18,7 +19,7 @@ export default async function CustomerDetailPage({
     include: {
       orders: {
         orderBy: { createdAt: "desc" },
-        include: { invoice: true },
+        include: { invoices: { orderBy: { createdAt: "desc" } } },
       },
       invoices: { orderBy: { createdAt: "desc" }, include: { order: true } },
       requests: {
@@ -140,9 +141,10 @@ export default async function CustomerDetailPage({
                           </span>
                         </td>
                         <td className="muted small">
-                          {o.invoice
-                            ? (o.invoice.invoiceNumber ?? "concept")
-                            : "—"}
+                          {(() => {
+                            const inv = pickActiveInvoice(o.invoices);
+                            return inv ? (inv.invoiceNumber ?? "concept") : "—";
+                          })()}
                         </td>
                         <td className="muted small">
                           {formatDateTime(o.createdAt)}

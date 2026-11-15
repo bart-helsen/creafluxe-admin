@@ -3,6 +3,7 @@ import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -196,4 +197,11 @@ export async function getObjectBytes(storageKey: string): Promise<Buffer> {
   );
   const bytes = await res.Body!.transformToByteArray();
   return Buffer.from(bytes);
+}
+
+/** Delete a stored object (used when a draft invoice is deleted). */
+export async function deleteObject(storageKey: string): Promise<void> {
+  await client().send(
+    new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: storageKey }),
+  );
 }

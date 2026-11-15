@@ -16,6 +16,7 @@ import { formatRequestNumber } from "@/lib/requests";
 import OrderEditPanel from "@/components/OrderEditPanel";
 import OrderItemFiles from "@/components/OrderItemFiles";
 import { isR2Configured } from "@/lib/r2";
+import { pickActiveInvoice } from "@/server/invoices/activeInvoice";
 import type { Line, PickerProduct } from "@/components/OrderLinesEditor";
 
 export default async function OrderDetailPage({
@@ -33,7 +34,10 @@ export default async function OrderDetailPage({
         orderBy: { createdAt: "asc" },
         include: { _count: { select: { customDesigns: true } } },
       },
-      invoice: true,
+      invoices: {
+        orderBy: { createdAt: "desc" },
+        include: { creditNote: { select: { id: true, creditNoteNumber: true } } },
+      },
       request: { select: { id: true, requestNumber: true } },
       offer: { select: { id: true, offerNumber: true } },
       statusEvents: {
@@ -43,6 +47,9 @@ export default async function OrderDetailPage({
     },
   });
   if (!order) notFound();
+
+  const invoice = pickActiveInvoice(order.invoices);
+  const cancelledInvoices = order.invoices.filter((inv) => inv.status === "CANCELLED");
 
   const designs = await gatherOrderDesigns(order.id);
   const r2On = isR2Configured();
@@ -91,8 +98,8 @@ export default async function OrderDetailPage({
     remarks: it.remarks ?? "",
   }));
   const editLockedReason =
-    order.invoice && order.invoice.status !== "DRAFT"
-      ? `De factuur ${order.invoice.invoiceNumber ?? ""} is al uitgereikt, dus deze bestelling kan niet meer aangepast worden. Maak een creditnota of een aparte bestelling voor het verschil.`
+    invoice && invoice.status !== "DRAFT"
+      ? `De factuur ${invoice.invoiceNumber ?? ""} is al uitgereikt, dus deze bestelling kan niet meer aangepast worden. Annuleer de factuur met een creditnota (op de factuurpagina) of maak een aparte bestelling voor het verschil.`
       : null;
   const designByItem = new Map(designs.map((d) => [d.orderItemId, d.files]));
 
@@ -287,24 +294,45 @@ export default async function OrderDetailPage({
 
           <section className="panel">
             <h2>Factuur</h2>
-            {order.invoice ? (
+            {invoice ? (
               <p className="stack">
                 <span>
-                  <span className="status-pill">{order.invoice.status}</span>{" "}
-                  {order.invoice.invoiceNumber ?? "concept"}
+                  <span className="status-pill">{invoice.status}</span>{" "}
+                  {invoice.invoiceNumber ?? "concept"}
                 </span>
-                <span>{formatEUR(order.invoice.total.toString())}</span>
-                <Link href={`/invoices/${order.invoice.id}`} className="link-strong">
+                <span>{formatEUR(invoice.total.toString())}</span>
+                <Link href={`/invoices/${invoice.id}`} className="link-strong">
                   Factuur openen →
                 </Link>
               </p>
             ) : (
-              <p className="muted small">Nog geen factuur.</p>
+              <p className="muted small">
+                {cancelledInvoices.length ? "Geen actieve factuur." : "Nog geen factuur."}
+              </p>
+            )}
+            {cancelledInvoices.length > 0 && (
+              <>
+                <h3>Geannuleerd</h3>
+                <ul className="stack small">
+                  {cancelledInvoices.map((inv) => (
+                    <li key={inv.id}>
+                      <Link href={`/invoices/${inv.id}`}>
+                        Factuur {inv.invoiceNumber ?? "concept"}
+                      </Link>{" "}
+                      <span className="muted">
+                        {inv.creditNote
+                          ? `· creditnota ${inv.creditNote.creditNoteNumber}`
+                          : "· zonder creditnota"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
             <form action={regenerateInvoiceAction}>
               <input type="hidden" name="orderId" value={order.id} />
               <button type="submit" className="btn-ghost btn-ghost--dark">
-                {order.invoice ? "Concept herberekenen" : "Concept aanmaken"}
+                {invoice ? "Concept herberekenen" : "Concept aanmaken"}
               </button>
             </form>
           </section>

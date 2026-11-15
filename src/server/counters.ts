@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 
-// Atomic, gapless sequential numbers for orders, invoices, requests and offers.
+// Atomic, gapless sequential numbers for orders, invoices, credit notes,
+// requests and offers.
 //
 // Belgian invoices must be numbered sequentially with NO gaps (docs/03). You
 // cannot derive that from COUNT(*) (drafts/deletes would break it) or from
@@ -24,7 +25,7 @@ type Db = Prisma.TransactionClient | typeof prisma;
  * transaction (e.g. issuing an invoice).
  */
 export async function nextCounter(
-  name: "order" | "invoice" | "request" | "offer",
+  name: "order" | "invoice" | "creditnote" | "request" | "offer",
   year: number,
   db: Db = prisma,
 ): Promise<number> {
@@ -52,6 +53,19 @@ export async function nextInvoiceNumber(
   db: Db = prisma,
 ): Promise<string> {
   const seq = await nextCounter("invoice", year, db);
+  return `${year}-${String(seq).padStart(4, "0")}`;
+}
+
+/**
+ * The next credit note number. Credit notes have their own gapless series per
+ * year (like Dexxter), in the same "YYYY-0001" format as invoices. Must be
+ * called inside the transaction that creates the credit note.
+ */
+export async function nextCreditNoteNumber(
+  year: number,
+  db: Db = prisma,
+): Promise<string> {
+  const seq = await nextCounter("creditnote", year, db);
   return `${year}-${String(seq).padStart(4, "0")}`;
 }
 

@@ -2,6 +2,7 @@ import type { OrderItem, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { isR2Configured, putObject } from "@/lib/r2";
 import { computeInvoiceTotals } from "./invoiceMath";
+import { ACTIVE_INVOICE_WHERE } from "./activeInvoice";
 
 // Flow 2 (docs/05): immediately after an order is saved, auto-generate a DRAFT
 // invoice for your review. Phase 1 stops at the draft — you finalise the real
@@ -29,18 +30,24 @@ export function describeOrderItem(item: {
  * Create or regenerate the DRAFT invoice for an order. Idempotent: safe to call
  * again while the invoice is still a draft (it rebuilds the lines and totals).
  * Refuses to touch an invoice that has already been ISSUED.
+ * Cancelled invoices (with a credit note) are ignored, so after a cancellation
+ * this creates a fresh draft for the corrected order.
  * Returns the invoice id.
  */
 export async function createDraftInvoice(orderId: string): Promise<string> {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
-    include: { items: true, invoice: true },
+    include: {
+      items: true,
+      invoices: { where: ACTIVE_INVOICE_WHERE, orderBy: { createdAt: "desc" }, take: 1 },
+    },
   });
   if (!order) throw new Error(`Order ${orderId} not found`);
+  const existing = order.invoices[0] ?? null;
 
-  if (order.invoice && order.invoice.status !== "DRAFT") {
+  if (existing && existing.status !== "DRAFT") {
     // Already finalised — never rewrite an issued invoice.
-    return order.invoice.id;
+    return existing.id;
   }
 
   const items = order.items;
@@ -64,10 +71,10 @@ export async function createDraftInvoice(orderId: string): Promise<string> {
   );
 
   const invoiceId = await prisma.$transaction(async (tx) => {
-    if (order.invoice) {
-      await tx.invoiceLine.deleteMany({ where: { invoiceId: order.invoice.id } });
+    if (existing) {
+      await tx.invoiceLine.deleteMany({ where: { invoiceId: existing.id } });
       await tx.invoice.update({
-        where: { id: order.invoice.id },
+        where: { id: existing.id },
         data: {
           subtotal: totals.subtotal,
           vatAmount: totals.vatAmount,
@@ -75,7 +82,7 @@ export async function createDraftInvoice(orderId: string): Promise<string> {
           lines: { createMany: { data: lineData } },
         },
       });
-      return order.invoice.id;
+      return existing.id;
     }
     const created = await tx.invoice.create({
       data: {

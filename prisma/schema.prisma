@@ -72,6 +72,7 @@ model Customer {
 
   orders   Order[]
   invoices Invoice[]
+  creditNotes CreditNote[]
   requests QuoteRequest[]
 
   @@index([email])
@@ -255,7 +256,9 @@ model Order {
   updatedAt DateTime @updatedAt
 
   items        OrderItem[]
-  invoice      Invoice?
+  // Normally one invoice. A cancelled invoice (with its credit note) stays
+  // here as history and a new one can be made — at most one is not CANCELLED.
+  invoices     Invoice[]
   statusEvents OrderStatusEvent[]
   notifications NotificationLog[]
   stockMovements StockMovement[] // material consumed producing this order
@@ -523,7 +526,8 @@ model Invoice {
   invoiceNumber String?       @unique
   status        InvoiceStatus @default(DRAFT)
 
-  orderId String @unique
+  // Not unique: an order keeps its cancelled invoices as history.
+  orderId String
   order   Order  @relation(fields: [orderId], references: [id])
 
   customerId String
@@ -550,8 +554,11 @@ model Invoice {
 
   lines    InvoiceLine[]
   payments Payment[]
+  // Set when the invoice was cancelled with a credit note.
+  creditNote CreditNote?
 
   @@index([status])
+  @@index([orderId])
 }
 
 enum InvoiceStatus {
@@ -560,7 +567,7 @@ enum InvoiceStatus {
   SENT      // delivered to customer
   PAID
   OVERDUE
-  CANCELLED
+  CANCELLED // only via a credit note (see CreditNote)
 }
 
 enum PeppolStatus {
@@ -584,6 +591,57 @@ model InvoiceLine {
   sortOrder  Int     @default(0)
 
   @@index([invoiceId])
+}
+
+// ===========================================================================
+// CREDIT NOTES — cancel an issued invoice. An issued invoice is never deleted
+// or renumbered (gapless numbering); it is cancelled by a credit note that
+// refers to it. Credit notes have their own gapless series, same format as
+// invoices ("2026-0001"), mirroring Dexxter. Always a full credit of one
+// invoice. Amounts are stored positive (the amount credited) and shown
+// negative on the PDF.
+// ===========================================================================
+
+model CreditNote {
+  id               String   @id @default(cuid())
+  creditNoteNumber String   @unique
+  issueDate        DateTime
+
+  invoiceId String  @unique
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  reason String?
+
+  subtotal  Decimal @db.Decimal(10, 2)
+  vatAmount Decimal @db.Decimal(10, 2)
+  total     Decimal @db.Decimal(10, 2)
+  currency  String  @default("EUR")
+
+  pdfStorageKey String?
+  dexxterRef    String? // the matching Dexxter credit note number
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines CreditNoteLine[]
+}
+
+// Snapshot of the credited invoice lines.
+model CreditNoteLine {
+  id           String     @id @default(cuid())
+  creditNoteId String
+  creditNote   CreditNote @relation(fields: [creditNoteId], references: [id], onDelete: Cascade)
+  description  String
+  quantity     Int
+  unitPrice    Decimal    @db.Decimal(10, 2)
+  vatRate      Decimal    @db.Decimal(5, 2)
+  lineTotal    Decimal    @db.Decimal(10, 2)
+  sortOrder    Int        @default(0)
+
+  @@index([creditNoteId])
 }
 
 // ===========================================================================
@@ -1089,7 +1147,7 @@ enum NotificationStatus {
 // One row per (name, year); increment inside a transaction to avoid gaps/dupes.
 model Counter {
   id      String @id @default(cuid())
-  name    String // "order" | "invoice" | "request" | "offer"
+  name    String // "order" | "invoice" | "creditnote" | "request" | "offer"
   year    Int
   value   Int    @default(0)
 
