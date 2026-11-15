@@ -9,6 +9,10 @@ import { z } from "zod";
 //   - the configurator page on the website (assets/js/configurator-memory-box.js)
 //   - the generator (product-tools/memory-box/generator/generate.py, apply_config)
 //   - this schema
+// `lidSide` (optional, added without a version bump: a box without it is the usual one) is the side a sliding
+// lid opens to or the hinge sits on; the generator turns the whole box accordingly.
+// `artworkMode` (optional, same rule) says how the customer's own picture is engraved: "vector" = solid shapes,
+// "photo" = grey tones as fine dots. Only with `artwork`; an SVG can only be a drawing.
 // Bump `version` when the meaning of a field changes.
 
 export const MEMORY_BOX_LIMITS = {
@@ -26,6 +30,21 @@ export const LID_LABELS = {
   lift: "Opliggend deksel",
   slide: "Schuifdeksel",
   hinge: "Scharnierdeksel",
+} as const;
+// Where a sliding lid opens to / where the hinge sits, seen from the front of the box (the side the name reads from).
+// Only the sliding lid and the hinge have a side.
+export const SIDES = ["front", "back", "left", "right"] as const;
+export const SLIDE_SIDE_LABELS = {
+  front: "de voorkant",
+  back: "de achterkant",
+  left: "links",
+  right: "rechts",
+} as const;
+export const HINGE_SIDE_LABELS = {
+  front: "de voorkant",
+  back: "de achterkant",
+  left: "de linkerkant",
+  right: "de rechterkant",
 } as const;
 export const FEET_LABELS = { arch: "Pootjes", flat: "Vlakke onderkant" } as const;
 export const BORDER_LABELS = {
@@ -50,9 +69,17 @@ const keysOf = <T extends Record<string, string>>(o: T) =>
 const fraction = z.number().gt(0).lt(1);
 const L = MEMORY_BOX_LIMITS;
 
+/** The side of the lid, with the usual side when none was chosen; null for the lift lid. */
+export function lidSideOf(o: { lid: keyof typeof LID_LABELS; lidSide?: (typeof SIDES)[number] | null }) {
+  if (o.lid === "lift") return null;
+  return o.lidSide ?? (o.lid === "slide" ? "front" : "back");
+}
+
 const memoryBoxOptionsSchema = z
   .object({
     lid: z.enum(keysOf(LID_LABELS)),
+    // slide: the side it opens to (default front); hinge: the side of the hinge (default back); lift: none
+    lidSide: z.enum(SIDES).nullish(),
     inner: z.object({
       w: z.number().min(L.inner.w[0]).max(L.inner.w[1]),
       d: z.number().min(L.inner.d[0]).max(L.inner.d[1]),
@@ -67,6 +94,7 @@ const memoryBoxOptionsSchema = z
     date: z.string().trim().max(L.dateMax).default(""),
     photoWindow: z.object({ w: z.number().positive(), h: z.number().positive() }).nullish(),
     artwork: z.string().trim().min(1).max(200).nullish(),
+    artworkMode: z.enum(["vector", "photo"]).nullish(),
   })
   .strict()
   .superRefine((o, ctx) => {
@@ -81,9 +109,21 @@ const memoryBoxOptionsSchema = z
         ctx.addIssue({ code: "custom", path: ["photoWindow"], message: "The photo window is too big for this box." });
       }
     }
-    // A sliding lid needs liners inside the side walls: the inside is 2 × 3 mm narrower.
-    const width = o.lid === "slide" ? o.inner.w - 6 : o.inner.w;
-    for (const [key, size] of [["dividers", width], ["dividersY", o.inner.d]] as const) {
+    if (o.artworkMode && !o.artwork) {
+      ctx.addIssue({ code: "custom", path: ["artworkMode"], message: "An engraving mode needs artwork." });
+    }
+    if (o.artworkMode === "photo" && o.artwork && /\.svgz?$/i.test(o.artwork)) {
+      ctx.addIssue({ code: "custom", path: ["artworkMode"], message: "An SVG can only be engraved as a drawing." });
+    }
+    if (o.lid === "lift" && o.lidSide) {
+      ctx.addIssue({ code: "custom", path: ["lidSide"], message: "The lift lid has no side." });
+    }
+    // A sliding lid needs liners inside the two walls next to the open side: the side walls (open to the
+    // front or back, so the inside is 2 × 3 mm narrower) or the front and back walls (left or right, 2 × 3 mm less deep).
+    const side = lidSideOf(o);
+    const width = o.lid === "slide" && (side === "front" || side === "back") ? o.inner.w - 6 : o.inner.w;
+    const depth = o.lid === "slide" && (side === "left" || side === "right") ? o.inner.d - 6 : o.inner.d;
+    for (const [key, size] of [["dividers", width], ["dividersY", depth]] as const) {
       const edges = [0, ...[...o[key]].sort((a, b) => a - b).map((f) => f * size), size];
       for (let i = 1; i < edges.length; i++) {
         if (edges[i] - edges[i - 1] - 3 < L.minCompartment) {
@@ -123,6 +163,15 @@ function compartments(fractions: number[]): string {
   return `${fractions.length + 1} vakken (tussenschot op ${pct.join(", ")})`;
 }
 
+/** " (schuift open naar links)" / " (scharnier aan de achterkant)"; empty for the lift lid. */
+function lidSideText(o: ProductConfiguration["options"]): string {
+  const side = lidSideOf(o);
+  if (!side) return "";
+  return o.lid === "slide"
+    ? ` (schuift open naar ${SLIDE_SIDE_LABELS[side]})`
+    : ` (scharnier aan ${HINGE_SIDE_LABELS[side]})`;
+}
+
 /** The configuration as label/value rows, for the admin page and the e-mails. */
 export function describeConfiguration(config: ProductConfiguration): { label: string; value: string }[] {
   const o = config.options;
@@ -130,7 +179,7 @@ export function describeConfiguration(config: ProductConfiguration): { label: st
     { label: "Product", value: PRODUCT_LABELS[config.product] },
     { label: "Aantal", value: String(config.quantity) },
     { label: "Binnenmaat", value: `${o.inner.w} × ${o.inner.d} × ${o.inner.h} mm (b × d × h)` },
-    { label: "Deksel", value: LID_LABELS[o.lid] },
+    { label: "Deksel", value: LID_LABELS[o.lid] + lidSideText(o) },
     { label: "Vakken links-rechts", value: compartments(o.dividers) },
     { label: "Vakken voor-achter", value: compartments(o.dividersY) },
     { label: "Onderkant", value: FEET_LABELS[o.feet] },
@@ -144,6 +193,7 @@ export function describeConfiguration(config: ProductConfiguration): { label: st
   }
   if (o.artwork) {
     rows.push({ label: "Eigen tekening", value: `${o.artwork} (zit als bijlage in de e-mail)` });
+    rows.push({ label: "Graveren als", value: o.artworkMode === "photo" ? "Foto (grijstinten)" : "Tekening" });
   }
   return rows;
 }

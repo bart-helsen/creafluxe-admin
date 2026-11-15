@@ -28,7 +28,7 @@ export default async function InvoicesPage({
 
   const invoices = await prisma.invoice.findMany({
     where: active === "ALL" ? {} : { status: active },
-    include: { customer: true, order: true },
+    include: { customer: true, order: true, creditNote: true },
     orderBy: { createdAt: "desc" },
     take: 100,
   });
@@ -71,6 +71,7 @@ export default async function InvoicesPage({
                 <th>Status</th>
                 <th>Datum</th>
                 <th>Dexxter</th>
+                <th>Creditnota</th>
               </tr>
             </thead>
             <tbody>
@@ -98,6 +99,19 @@ export default async function InvoicesPage({
                     {formatDate(inv.issueDate ?? inv.createdAt)}
                   </td>
                   <td className="muted small">{inv.dexxterRef ?? "—"}</td>
+                  <td className="muted small">
+                    {inv.creditNote ? (
+                      <a
+                        href={`/credit-notes/${inv.creditNote.id}/pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {inv.creditNote.creditNoteNumber}
+                      </a>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

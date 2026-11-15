@@ -7,7 +7,7 @@ const D = (v: string) => new Prisma.Decimal(v);
 const db = vi.hoisted(() => ({
   order: { findUnique: vi.fn(), update: vi.fn() },
   product: { findMany: vi.fn() },
-  invoice: { findUnique: vi.fn() },
+  invoice: { findFirst: vi.fn() },
   orderItem: { deleteMany: vi.fn(), update: vi.fn(), create: vi.fn() },
   orderStatusEvent: { create: vi.fn() },
   $transaction: vi.fn(),
@@ -24,7 +24,7 @@ const baseOrder = () => ({
   status: "NEW",
   designBrief: null,
   total: D("28.00"),
-  invoice: { status: "DRAFT" },
+  invoices: [{ status: "DRAFT" }],
   items: [
     { id: "i1", nameSnapshot: "Flacon", _count: { customDesigns: 0 } },
     { id: "i2", nameSnapshot: "Naambord", _count: { customDesigns: 2 } },
@@ -40,7 +40,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   db.order.findUnique.mockResolvedValue(baseOrder());
   db.product.findMany.mockResolvedValue([{ id: "p1", vatRate: D("21") }]);
-  db.invoice.findUnique.mockResolvedValue({ status: "DRAFT" });
+  db.invoice.findFirst.mockResolvedValue({ status: "DRAFT" });
   db.$transaction.mockImplementation((fn: (tx: typeof db) => unknown) => fn(db));
 });
 
@@ -68,10 +68,18 @@ describe("updateOrderItems", () => {
   });
 
   it("refuses when the invoice is already issued", async () => {
-    db.order.findUnique.mockResolvedValue({ ...baseOrder(), invoice: { status: "ISSUED" } });
+    db.order.findUnique.mockResolvedValue({ ...baseOrder(), invoices: [{ status: "ISSUED" }] });
     await expect(
       updateOrderItems({ orderId: "o1", userId: "u1", input: { note: null, items: [item({ id: "i1" }), item({ id: "i2" })] } }),
     ).rejects.toThrow(/al uitgereikt/);
+  });
+
+  it("allows editing again once the invoice is cancelled (no active invoice)", async () => {
+    db.order.findUnique.mockResolvedValue({ ...baseOrder(), invoices: [] });
+    db.invoice.findFirst.mockResolvedValue(null);
+    await expect(
+      updateOrderItems({ orderId: "o1", userId: "u1", input: { note: null, items: [item({ id: "i1" }), item({ id: "i2" })] } }),
+    ).resolves.toBeDefined();
   });
 
   it("refuses to remove a line that has design files", async () => {

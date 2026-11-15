@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { formatEUR, money } from "@/lib/money";
 import { computeInvoiceTotals } from "@/server/invoices/invoiceMath";
 import { createDraftInvoice } from "@/server/invoices/createDraftInvoice";
+import { ACTIVE_INVOICE_WHERE } from "@/server/invoices/activeInvoice";
 import { ManualOrderError, priceManualLines } from "@/server/orders/createManualOrder";
 import type { OrderItemsUpdateInput } from "@/lib/validation";
 
@@ -10,8 +11,9 @@ import type { OrderItemsUpdateInput } from "@/lib/validation";
 // change or when the customer adds something later.
 //
 // Rules:
-// - Only while the invoice is still a DRAFT (or there is none). An issued
-//   invoice has a fixed number and amount and is never rewritten.
+// - Only while the active invoice is still a DRAFT (or there is none). An
+//   issued invoice has a fixed number and amount and is never rewritten;
+//   cancel it with a credit note first (cancelled invoices don't count).
 // - Lines with uploaded design files can be changed but not removed (removing
 //   them would delete the customer's files).
 // - Every edit is logged in the status timeline with old → new total.
@@ -27,12 +29,12 @@ export async function updateOrderItems(params: {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
     include: {
-      invoice: { select: { status: true } },
+      invoices: { where: ACTIVE_INVOICE_WHERE, select: { status: true }, take: 1 },
       items: { include: { _count: { select: { customDesigns: true } } } },
     },
   });
   if (!order) throw new ManualOrderError("Bestelling niet gevonden.");
-  assertEditable(order.invoice);
+  assertEditable(order.invoices[0] ?? null);
 
   if (input.items.length === 0 && !(order.type === "CUSTOM" && order.designBrief)) {
     throw new ManualOrderError("Een bestelling heeft minstens één artikel nodig.");
@@ -67,8 +69,8 @@ export async function updateOrderItems(params: {
 
   await prisma.$transaction(async (tx) => {
     // Re-check inside the transaction: the invoice may have been issued meanwhile.
-    const invoice = await tx.invoice.findUnique({
-      where: { orderId },
+    const invoice = await tx.invoice.findFirst({
+      where: { orderId, ...ACTIVE_INVOICE_WHERE },
       select: { status: true },
     });
     assertEditable(invoice);
@@ -124,7 +126,7 @@ function assertEditable(invoice: { status: string } | null) {
   if (invoice && invoice.status !== "DRAFT") {
     throw new ManualOrderError(
       "De factuur is al uitgereikt — deze bestelling kan niet meer aangepast worden. " +
-        "Maak een creditnota of een aparte bestelling voor het verschil.",
+        "Annuleer de factuur met een creditnota of maak een aparte bestelling voor het verschil.",
     );
   }
 }
