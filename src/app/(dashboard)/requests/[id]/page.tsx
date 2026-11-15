@@ -6,6 +6,11 @@ import { formatEUR, formatDate, formatDateTime } from "@/lib/money";
 import { channelLabel } from "@/lib/manual-order";
 import { isR2Configured, presignDownload } from "@/lib/r2";
 import {
+  configurationFileName,
+  describeConfiguration,
+  readConfiguration,
+} from "@/lib/product-config";
+import {
   MANUAL_REQUEST_STATUSES,
   OFFER_STATUS_LABELS,
   REQUEST_EVENT_LABELS,
@@ -54,6 +59,7 @@ export default async function RequestDetailPage({
     })),
   );
 
+  const configuration = readConfiguration(request.configuration);
   const number = formatRequestNumber(request.requestNumber);
   const title = requestTitle(request);
   const accepted = request.status === "ACCEPTED" || !!request.order;
@@ -139,6 +145,41 @@ export default async function RequestDetailPage({
               </details>
             )}
           </section>
+
+          {/* Configurator choices */}
+          {configuration && (
+            <section className="panel">
+              <div className="detail-header">
+                <h2>Configuratie</h2>
+                <div className="header-actions">
+                  <a
+                    href={`/requests/${request.id}/configuration`}
+                    className="btn-ghost btn-ghost--dark"
+                    download
+                  >
+                    Download .json
+                  </a>
+                </div>
+              </div>
+              <div className="table-wrap">
+                <table className="data-table">
+                  <tbody>
+                    {describeConfiguration(configuration).map((row) => (
+                      <tr key={row.label}>
+                        <th scope="row">{row.label}</th>
+                        <td>{row.value}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="muted small">
+                Snijbestanden maken: bewaar de .json (en een eventuele tekening uit de e-mail) in
+                één map en voer uit in <code>product-tools/{configuration.product}/generator</code>:{" "}
+                <code>python generate.py --config {configurationFileName(request.requestNumber, configuration)}</code>
+              </p>
+            </section>
+          )}
 
           {/* Offers */}
           <section className="panel">

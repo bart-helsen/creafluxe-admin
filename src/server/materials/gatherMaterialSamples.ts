@@ -18,6 +18,7 @@ export interface MaterialSampleView {
   machineName: string | null;
   caption: string | null;
   active: boolean;
+  shared: boolean; // true when the photo belongs to the material's sample group
   fileName: string;
   storageKey: string;
   imageUrl: string | null; // null when R2 isn't configured
@@ -28,15 +29,29 @@ export interface MaterialSampleGroup {
   samples: MaterialSampleView[];
 }
 
-const OPERATION_ORDER: Operation[] = ["RAW", "ENGRAVE", "SCORE", "CUT"];
+const OPERATION_ORDER: Operation[] = [
+  "RAW",
+  "ENGRAVE_VECTOR",
+  "ENGRAVE_BITMAP",
+  "SCORE",
+  "CUT",
+];
 
 export async function gatherMaterialSamples(
   materialId: string,
   { includeInactive = false }: { includeInactive?: boolean } = {},
 ): Promise<MaterialSampleGroup[]> {
+  // A material shows its own photos plus those of its sample group (shared
+  // between e.g. all thicknesses of the same plate material).
+  const material = await prisma.material.findUnique({
+    where: { id: materialId },
+    select: { sampleGroupId: true },
+  });
+  const groupId = material?.sampleGroupId ?? null;
+
   const rows = await prisma.materialSample.findMany({
     where: {
-      materialId,
+      OR: [{ materialId }, ...(groupId ? [{ groupId }] : [])],
       ...(includeInactive ? {} : { active: true }),
     },
     include: { machine: { select: { id: true, name: true } } },
@@ -53,6 +68,7 @@ export async function gatherMaterialSamples(
       machineName: s.machine?.name ?? null,
       caption: s.caption,
       active: s.active,
+      shared: s.groupId !== null,
       fileName: s.fileName,
       storageKey: s.storageKey,
       imageUrl: r2On ? await presignDownload(s.storageKey) : null,

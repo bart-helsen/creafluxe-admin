@@ -32,7 +32,13 @@ function optStr(formData: FormData, key: string): string | null {
   return v.length ? v : null;
 }
 
-const OPERATIONS: Operation[] = ["RAW", "CUT", "ENGRAVE", "SCORE"];
+const OPERATIONS: Operation[] = [
+  "RAW",
+  "CUT",
+  "ENGRAVE_VECTOR",
+  "ENGRAVE_BITMAP",
+  "SCORE",
+];
 
 // ---------------------------------------------------------------------------
 // Upload a showcase photo for a material (one operation, optionally a machine).
@@ -45,6 +51,9 @@ export async function uploadMaterialSampleAction(
   const materialId = str(formData, "materialId");
   const operation = str(formData, "operation") as Operation;
   const file = formData.get("file");
+  // "group" = store on the material's sample group so every material in the
+  // group shows it; anything else = only this material.
+  const shareWithGroup = str(formData, "scope") === "group";
 
   if (!materialId) throw new Error("Onbekend materiaal.");
   if (!OPERATIONS.includes(operation)) {
@@ -74,13 +83,27 @@ export async function uploadMaterialSampleAction(
     throw new Error(`Bestandstype niet toegestaan: ${mimeType}. Gebruik JPG, PNG of WebP.`);
   }
 
+  let groupId: string | null = null;
+  if (shareWithGroup) {
+    const m = await prisma.material.findUnique({
+      where: { id: materialId },
+      select: { sampleGroupId: true },
+    });
+    if (!m?.sampleGroupId) {
+      throw new Error("Dit materiaal zit nog niet in een staalgroep.");
+    }
+    groupId = m.sampleGroupId;
+  }
+
   const storageKey = buildSampleKey(file.name);
   const bytes = Buffer.from(await file.arrayBuffer());
   await putObject(storageKey, bytes, mimeType);
 
   await prisma.materialSample.create({
     data: {
-      materialId,
+      // exactly one owner: the group (shared) or the material itself
+      materialId: groupId ? null : materialId,
+      groupId,
       operation,
       machineId,
       storageKey,
@@ -92,7 +115,13 @@ export async function uploadMaterialSampleAction(
     },
   });
 
-  revalidatePath(`/materials/${materialId}`);
+  revalidateSamples(materialId, groupId !== null);
+}
+
+// Group samples show on several material pages, so refresh them all.
+function revalidateSamples(materialId: string, shared: boolean) {
+  if (shared) revalidatePath("/materials", "layout");
+  else revalidatePath(`/materials/${materialId}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -106,7 +135,7 @@ export async function updateMaterialSampleAction(
   const materialId = str(formData, "materialId");
   if (!id) throw new Error("Onbekend staal.");
 
-  await prisma.materialSample.update({
+  const updated = await prisma.materialSample.update({
     where: { id },
     data: {
       caption: optStr(formData, "caption"),
@@ -115,7 +144,7 @@ export async function updateMaterialSampleAction(
     },
   });
 
-  revalidatePath(`/materials/${materialId}`);
+  revalidateSamples(materialId, updated.groupId !== null);
 }
 
 // ---------------------------------------------------------------------------
@@ -128,6 +157,78 @@ export async function deleteMaterialSampleAction(
   await requireUserId();
   const id = str(formData, "id");
   const materialId = str(formData, "materialId");
-  await prisma.materialSample.delete({ where: { id } });
-  revalidatePath(`/materials/${materialId}`);
+  const deleted = await prisma.materialSample.delete({ where: { id } });
+  revalidateSamples(materialId, deleted.groupId !== null);
+}
+
+// ---------------------------------------------------------------------------
+// Put a material in a sample group (pick an existing one or create a new one
+// by name), or take it out again. Photos on the group are then shown on this
+// material too; the material's own photos are untouched.
+// ---------------------------------------------------------------------------
+export async function setMaterialSampleGroupAction(
+  formData: FormData,
+): Promise<void> {
+  await requireUserId();
+  const materialId = str(formData, "materialId");
+  if (!materialId) throw new Error("Onbekend materiaal.");
+
+  const newName = str(formData, "newGroupName");
+  const existingId = str(formData, "groupId");
+
+  let sampleGroupId: string | null = null;
+  if (newName) {
+    const group = await prisma.materialSampleGroup.upsert({
+      where: { name: newName },
+      update: {},
+      create: { name: newName },
+    });
+    sampleGroupId = group.id;
+  } else if (existingId) {
+    sampleGroupId = existingId;
+  }
+
+  await prisma.material.update({
+    where: { id: materialId },
+    data: { sampleGroupId },
+  });
+
+  revalidatePath("/materials", "layout");
+}
+
+// ---------------------------------------------------------------------------
+// Publish the showcase on the public website ("Materialen" section).
+// A material in a sample group is published through its GROUP (one entry for
+// all thicknesses); a material without a group is published on its own.
+// ---------------------------------------------------------------------------
+export async function setMaterialWebsiteAction(
+  formData: FormData,
+): Promise<void> {
+  await requireUserId();
+  const materialId = str(formData, "materialId");
+  if (!materialId) throw new Error("Onbekend materiaal.");
+
+  const showOnWebsite = formData.get("showOnWebsite") === "on";
+  const websiteText = optStr(formData, "websiteText");
+  const publicName = optStr(formData, "publicName");
+
+  const material = await prisma.material.findUnique({
+    where: { id: materialId },
+    select: { sampleGroupId: true },
+  });
+  if (!material) throw new Error("Materiaal niet gevonden.");
+
+  if (material.sampleGroupId) {
+    await prisma.materialSampleGroup.update({
+      where: { id: material.sampleGroupId },
+      data: { showOnWebsite, websiteText },
+    });
+  } else {
+    await prisma.material.update({
+      where: { id: materialId },
+      data: { showOnWebsite, websiteText, publicName },
+    });
+  }
+
+  revalidatePath("/materials", "layout");
 }

@@ -16,6 +16,8 @@ import {
 import {
   uploadMaterialSampleAction,
   deleteMaterialSampleAction,
+  setMaterialSampleGroupAction,
+  setMaterialWebsiteAction,
 } from "@/lib/material-sample-actions";
 import { gatherMaterialSamples } from "@/server/materials/gatherMaterialSamples";
 import MovementForm from "@/components/MovementForm";
@@ -24,11 +26,18 @@ import SupplierPriceRow from "@/components/SupplierPriceRow";
 const OPERATION_LABELS: Record<Operation, string> = {
   RAW: "Onbewerkt",
   CUT: "Gesneden",
-  ENGRAVE: "Gegraveerd",
+  ENGRAVE_VECTOR: "Vectorgravure",
+  ENGRAVE_BITMAP: "Bitmapgravure",
   SCORE: "Gescoord",
 };
 
-const OPERATION_OPTIONS: Operation[] = ["RAW", "ENGRAVE", "SCORE", "CUT"];
+const OPERATION_OPTIONS: Operation[] = [
+  "RAW",
+  "ENGRAVE_VECTOR",
+  "ENGRAVE_BITMAP",
+  "SCORE",
+  "CUT",
+];
 
 const CATEGORY_LABELS: Record<MaterialCategory, string> = {
   WOOD: "Hout",
@@ -58,6 +67,7 @@ export default async function MaterialDetailPage({
   const material = await prisma.material.findUnique({
     where: { id },
     include: {
+      sampleGroup: true,
       currentSupplier: true,
       supplierMaterials: {
         include: { supplier: true },
@@ -77,6 +87,11 @@ export default async function MaterialDetailPage({
     where: { active: true },
     orderBy: { name: "asc" },
     select: { id: true, name: true },
+  });
+
+  const sampleGroupOptions = await prisma.materialSampleGroup.findMany({
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, _count: { select: { materials: true } } },
   });
 
   const machines = await prisma.machine.findMany({
@@ -164,6 +179,105 @@ export default async function MaterialDetailPage({
               tonen.
             </p>
 
+            {/* Shared photo set: e.g. all thicknesses of the same plate */}
+            <form
+              action={setMaterialSampleGroupAction}
+              className="form-grid"
+              style={{ marginBottom: "1rem" }}
+            >
+              <input type="hidden" name="materialId" value={material.id} />
+              <label className="field">
+                Staalgroep{" "}
+                <span className="muted small">
+                  (deel foto&apos;s met andere diktes van dit materiaal)
+                </span>
+                <select
+                  name="groupId"
+                  defaultValue={material.sampleGroupId ?? ""}
+                >
+                  <option value="">Geen groep</option>
+                  {sampleGroupOptions.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name} ({g._count.materials})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                Of nieuwe groep
+                <input
+                  name="newGroupName"
+                  placeholder="bv. Berken multiplex"
+                />
+              </label>
+              <div className="form-actions form-col-2">
+                <button type="submit" className="btn-ghost btn-ghost--dark">
+                  Groep opslaan
+                </button>
+              </div>
+            </form>
+
+            {/* Publish on the public website (Materialen page) */}
+            <form
+              action={setMaterialWebsiteAction}
+              className="form-grid"
+              style={{ marginBottom: "1.25rem" }}
+            >
+              <input type="hidden" name="materialId" value={material.id} />
+              <label className="check-field form-col-2">
+                <input
+                  type="checkbox"
+                  name="showOnWebsite"
+                  defaultChecked={
+                    material.sampleGroup
+                      ? material.sampleGroup.showOnWebsite
+                      : material.showOnWebsite
+                  }
+                />
+                <span>
+                  Toon op de website (pagina Materialen)
+                  <span className="muted small">
+                    {" "}
+                    —{" "}
+                    {material.sampleGroup
+                      ? `geldt voor de hele groep “${material.sampleGroup.name}”; de groepsfoto's worden getoond`
+                      : "enkel de actieve foto's van dit materiaal worden getoond"}
+                  </span>
+                </span>
+              </label>
+              {!material.sampleGroup && (
+                <label className="field">
+                  Naam op de website{" "}
+                  <span className="muted small">(leeg = {material.name})</span>
+                  <input
+                    name="publicName"
+                    defaultValue={material.publicName ?? ""}
+                    placeholder="bv. Doorzichtig plexiglas"
+                  />
+                </label>
+              )}
+              <label
+                className={`field${material.sampleGroup ? " form-col-2" : ""}`}
+              >
+                Korte tekst voor klanten{" "}
+                <span className="muted small">(optioneel)</span>
+                <input
+                  name="websiteText"
+                  defaultValue={
+                    material.sampleGroup
+                      ? (material.sampleGroup.websiteText ?? "")
+                      : (material.websiteText ?? "")
+                  }
+                  placeholder="bv. Warme, fijne houtnerf; graveert met mooi contrast"
+                />
+              </label>
+              <div className="form-actions form-col-2">
+                <button type="submit" className="btn-ghost btn-ghost--dark">
+                  Website-instellingen opslaan
+                </button>
+              </div>
+            </form>
+
             {sampleGroups.length === 0 ? (
               <p className="muted small">Nog geen stalen geüpload.</p>
             ) : (
@@ -211,6 +325,11 @@ export default async function MaterialDetailPage({
                         <figcaption className="small" style={{ marginTop: "0.4rem" }}>
                           {s.machineName && (
                             <span className="status-pill">{s.machineName}</span>
+                          )}
+                          {s.shared && (
+                            <span className="status-pill">
+                              gedeeld{material.sampleGroup ? ` · ${material.sampleGroup.name}` : ""}
+                            </span>
                           )}
                           {!s.active && (
                             <span className="stock-flag">verborgen</span>
@@ -264,6 +383,17 @@ export default async function MaterialDetailPage({
                   ))}
                 </select>
               </label>
+              {material.sampleGroupId && (
+                <label className="field">
+                  Toepassen op
+                  <select name="scope" defaultValue="group">
+                    <option value="group">
+                      Alle materialen in groep &ldquo;{material.sampleGroup?.name}&rdquo;
+                    </option>
+                    <option value="material">Alleen dit materiaal</option>
+                  </select>
+                </label>
+              )}
               <label className="field">
                 Foto (JPG, PNG of WebP)
                 <FileInput
